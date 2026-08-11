@@ -7,7 +7,7 @@ Rewritten from the Google Apps Script prototype (`H:\Web CIDA\POS`) as a monorep
 ```
 apps/api       Hono + D1 + KV Worker (REST API, PIN+JWT auth, atomic stock deduction)
 apps/pos       POS PWA — React + Vite + Tailwind (mobile-first, offline queue, PromptPay QR)
-apps/admin     Admin dashboard — React + Vite + Tailwind + recharts (full CRUD + reports)
+apps/admin     Admin dashboard — React + Vite + Tailwind (overview/stats + CRUD for products/events/users/divisions/settings/sales)
 packages/shared  Shared types, PromptPay payload generator, API client, Thai locale
 ```
 
@@ -16,8 +16,17 @@ packages/shared  Shared types, PromptPay payload generator, API client, Thai loc
 | Resource      | Name          | Notes                                       |
 |---------------|---------------|---------------------------------------------|
 | API Worker    | `cida-pos-api` | https://cida-pos-api.pongsinbas.workers.dev |
-| D1 database   | `pos2-db`      | id `8b9b8b49-fb27-4a4e-88fc-e1e2e6e8f99c`  |
-| KV namespace  | `pos2-cache`   | id `8ba7d1c1eed34ccfaa91f186041bfc27`      |
+| D1 database   | `pos2-db`      | id `1fefe03c-11e3-4d73-a57c-e5ed45e6cdf8`  |
+| KV namespace  | `pos2-cache`   | id `e1ef61302b5e44c48ffe3e22e4d89b84`      |
+| Pages         | `cida-pos`     | POS PWA (deploy via `npm run deploy:pos`)   |
+| Pages         | `cida-pos-admin` | Admin dashboard (deploy via `npm run deploy:admin`) |
+
+## Seed accounts
+
+| Role    | Username | PIN  |
+|---------|----------|------|
+| Admin   | `admin`  | `1234` |
+| Cashier | `cashier`| `0000` |
 
 ## Commands
 
