@@ -1,0 +1,26 @@
+{
+  "name": "cida-pos2",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w apps/api",
+    "dev:pos": "npm run dev -w apps/pos",
+    "dev:admin": "npm run dev -w apps/admin",
+    "build:shared": "npm run build -w packages/shared",
+    "build": "npm run build:shared && npm run build -w apps/api && npm run build -w apps/pos && npm run build -w apps/admin",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "deploy:api": "npm run deploy -w apps/api",
+    "deploy:pos": "npm run deploy -w apps/pos",
+    "deploy:admin": "npm run deploy -w apps/admin",
+    "migrate": "npm run migrate -w apps/api"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

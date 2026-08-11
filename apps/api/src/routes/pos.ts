@@ -1,0 +1,219 @@
+import { Hono } from 'hono';
+import { requireAuth } from '../middleware';
+import { ok, fail, badRequest, notFound } from '../lib/http';
+import type { PaymentMethod } from '@cida/shared';
+import type { Env, Variables } from '../env';
+
+const pos = new Hono<{ Bindings: Env; Variables: Variables }>();
+pos.use('*', requireAuth);
+
+// ── Public settings (receipt header, PromptPay ID) ──
+pos.get('/settings/public', async (c) => {
+  const rows = await c.env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('org_name','org_subtitle','org_address','tax_id','promptpay_id','receipt_footer')").all();
+  const map: Record<string, string> = {};
+  for (const r of rows.results) map[r.key as string] = (r.value as string) ?? '';
+  return ok(c, {
+    org_name: map.org_name || '',
+    org_subtitle: map.org_subtitle || '',
+    org_address: map.org_address || '',
+    tax_id: map.tax_id || '',
+    promptpay_id: map.promptpay_id || '',
+    receipt_footer: map.receipt_footer || '',
+  });
+});
+
+// ── Events ──
+pos.get('/events', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, code, name, date, location, status FROM events ORDER BY CASE status WHEN 'ACTIVE' THEN 0 WHEN 'UPCOMING' THEN 1 ELSE 2 END, id DESC",
+  ).all();
+  return ok(c, results);
+});
+
+pos.get('/events/active', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, code, name, date, location, status FROM events WHERE status = 'ACTIVE' ORDER BY id DESC",
+  ).all();
+  return ok(c, results);
+});
+
+// ── Products for an event ──
+pos.get('/events/:id/products', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id)) return badRequest(c, 'invalid id');
+  const { results } = await c.env.DB.prepare(
+    `SELECT p.id, p.sku, p.name, p.division_id, d.name AS division_name, p.price, p.image_url, p.stock, p.active
+     FROM event_products ep
+     JOIN products p ON p.id = ep.product_id
+     LEFT JOIN divisions d ON d.id = p.division_id
+     WHERE ep.event_id = ? AND p.active = 1
+     ORDER BY d.sort_order, p.name`,
+  )
+    .bind(id)
+    .all();
+  return ok(c, results);
+});
+
+// ── Divisions ──
+pos.get('/divisions', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, name, icon, sort_order FROM divisions ORDER BY sort_order, name',
+  ).all();
+  return ok(c, results);
+});
+
+// ── Sales (cashier sees own, admin sees all) ──
+pos.get('/sales', async (c) => {
+  const user = c.get('user');
+  const eventId = c.req.query('event_id');
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+
+  let sql = `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
+                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.created_at
+             FROM sales s
+             JOIN events e ON e.id = s.event_id
+             JOIN users u ON u.id = s.cashier_user_id
+             WHERE 1=1`;
+  const args: unknown[] = [];
+  if (user.role !== 'admin') {
+    sql += ' AND s.cashier_user_id = ?';
+    args.push(user.id);
+  }
+  if (eventId) {
+    sql += ' AND s.event_id = ?';
+    args.push(Number(eventId));
+  }
+  if (from) {
+    sql += ' AND date(s.created_at) >= ?';
+    args.push(from);
+  }
+  if (to) {
+    sql += ' AND date(s.created_at) <= ?';
+    args.push(to);
+  }
+  sql += ' ORDER BY s.id DESC LIMIT 200';
+  const { results } = await c.env.DB.prepare(sql).bind(...args).all();
+  return ok(c, results);
+});
+
+pos.get('/sales/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  const user = c.get('user');
+  const sale = await c.env.DB.prepare(
+    `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
+            s.subtotal, s.discount, s.total, s.payment_method, s.status, s.created_at
+     FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id
+     WHERE s.id = ?`,
+  )
+    .bind(id)
+    .first();
+  if (!sale) return notFound(c);
+  if (user.role !== 'admin' && sale.cashier_user_id !== user.id) return notFound(c);
+  const items = await c.env.DB.prepare(
+    'SELECT id, sale_id, product_id, sku, name, qty, price, line_total FROM sale_items WHERE sale_id = ? ORDER BY id',
+  )
+    .bind(id)
+    .all();
+  return ok(c, { ...sale, items: items.results });
+});
+
+// ── Create sale (atomic: stock deducted in same D1 batch as sale+items) ──
+pos.post('/sales', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const user = c.get('user');
+  const eventId = Number(body?.event_id);
+  const discount = Math.max(0, Number(body?.discount) || 0);
+  const paymentMethod: PaymentMethod = body?.payment_method === 'PromptPay' ? 'PromptPay' : 'Cash';
+  const rawItems = Array.isArray(body?.items) ? body.items : [];
+
+  if (!Number.isInteger(eventId) || eventId <= 0) return badRequest(c, 'event_id ไม่ถูกต้อง');
+  if (rawItems.length === 0) return badRequest(c, 'ไม่มีรายการสินค้า');
+
+  const event = await c.env.DB.prepare('SELECT id, name FROM events WHERE id = ?').bind(eventId).first();
+  if (!event) return badRequest(c, 'ไม่พบกิจกรรมนี้');
+
+  // Load products server-side (authoritative prices/stock)
+  const productIds = [...new Set(rawItems.map((i: { product_id: number }) => Number(i.product_id)))];
+  const placeholders = productIds.map(() => '?').join(',');
+  const products = await c.env.DB.prepare(`SELECT * FROM products WHERE id IN (${placeholders}) AND active = 1`)
+    .bind(...productIds)
+    .all();
+
+  const productMap = new Map<number, { id: number; sku: string; name: string; price: number; stock: number | null }>();
+  for (const p of products.results) productMap.set(Number(p.id), p as never);
+
+  const items: { product_id: number; sku: string; name: string; qty: number; price: number; line_total: number }[] = [];
+  let subtotal = 0;
+
+  for (const raw of rawItems) {
+    const productId = Number(raw?.product_id);
+    const qty = Number(raw?.qty);
+    if (!productMap.has(productId)) return fail(c, `สินค้า id=${productId} ไม่ถูกต้องหรือไม่พบ`, 400, 'PRODUCT_NOT_FOUND');
+    if (!Number.isFinite(qty) || qty <= 0 || qty % 1 !== 0) return badRequest(c, 'จำนวนสินค้าไม่ถูกต้อง');
+    const p = productMap.get(productId)!;
+    if (p.stock !== null && qty > p.stock) return fail(c, `สินค้า "${p.name}" มีไม่เพียงพอ (เหลือ ${p.stock})`, 409, 'INSUFFICIENT_STOCK');
+    const lineTotal = Math.round(p.price * qty * 100) / 100;
+    items.push({ product_id: p.id, sku: p.sku, name: p.name, qty, price: p.price, line_total: lineTotal });
+    subtotal += lineTotal;
+  }
+
+  if (discount > subtotal) return badRequest(c, 'ส่วนลดมากกว่ายอดรวม');
+  const total = Math.round((subtotal - discount) * 100) / 100;
+
+  // Insert sale first so we know its id.
+  const saleRes = await c.env.DB.prepare(
+    `INSERT INTO sales (event_id, cashier_user_id, subtotal, discount, total, payment_method, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'COMPLETED', datetime('now')) RETURNING id`,
+  )
+    .bind(eventId, user.id, subtotal, discount, total, paymentMethod)
+    .first();
+  const saleId = Number((saleRes as { id?: unknown })?.id);
+  if (!Number.isInteger(saleId)) return fail(c, 'ไม่สามารถสร้างการขายได้', 500, 'DB_ERROR');
+
+  // Atomic batch for stock + items. If any statement fails the whole batch
+  // rolls back, and we compensate by deleting the orphaned sale.
+  const stmts: D1PreparedStatement[] = [];
+  for (const item of items) {
+    const p = productMap.get(item.product_id)!;
+    if (p.stock !== null) {
+      // CHECK (stock >= 0) makes going negative throw, rolling back the batch.
+      stmts.push(c.env.DB.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').bind(item.qty, item.product_id));
+    }
+  }
+  for (const item of items) {
+    stmts.push(
+      c.env.DB.prepare(
+        `INSERT INTO sale_items (sale_id, product_id, sku, name, qty, price, line_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(saleId, item.product_id, item.sku, item.name, item.qty, item.price, item.line_total),
+    );
+  }
+
+  try {
+    await c.env.DB.batch(stmts);
+  } catch (e) {
+    await c.env.DB.prepare('DELETE FROM sales WHERE id = ?').bind(saleId).run();
+    const msg = e instanceof Error ? e.message : 'unknown';
+    if (msg.includes('CHECK')) return fail(c, 'สินค้าในตะกร้ามีไม่เพียงพอ (สต็อกเปลี่ยนแปลง)', 409, 'INSUFFICIENT_STOCK');
+    return fail(c, 'ไม่สามารถบันทึกการขายได้: ' + msg, 500, 'DB_ERROR');
+  }
+
+  const created = await c.env.DB.prepare(
+    `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
+            s.subtotal, s.discount, s.total, s.payment_method, s.status, s.created_at
+     FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id
+     WHERE s.id = ?`,
+  )
+    .bind(saleId)
+    .first();
+  const itemsOut = await c.env.DB.prepare(
+    'SELECT id, sale_id, product_id, sku, name, qty, price, line_total FROM sale_items WHERE sale_id = ? ORDER BY id',
+  )
+    .bind(saleId)
+    .all();
+
+  return ok(c, { ...created, items: itemsOut.results }, 201);
+});
+
+export default pos;

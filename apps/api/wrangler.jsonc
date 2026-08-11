@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cida-pos-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pos2-db",
+      "database_id": "1fefe03c-11e3-4d73-a57c-e5ed45e6cdf8",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "e1ef61302b5e44c48ffe3e22e4d89b84"
+    }
+  ],
+  "vars": {
+    "APP_ORIGIN_POS": "https://cida-pos.pages.dev",
+    "APP_ORIGIN_ADMIN": "https://cida-pos-admin.pages.dev"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
