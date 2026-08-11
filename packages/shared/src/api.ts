@@ -4,16 +4,13 @@
 export const PROD_API_URL = 'https://cida-pos-api.pongsinbas.workers.dev';
 const DEV_API_URL = 'http://localhost:8787';
 
-function envVar(key: string): string | undefined {
-  const meta = import.meta as unknown as { env?: Record<string, string | boolean | undefined> };
-  const v = meta.env ? meta.env[key] : undefined;
-  return typeof v === 'string' ? v : undefined;
-}
+// NOTE: `import.meta.env` must be accessed literally — Vite statically replaces
+// it at build time (dead-code-eliminates the DEV branch in prod). Reading it
+// through a variable leaves a runtime check that fails on Cloudflare Pages.
 
-function isProd(): boolean {
-  const meta = import.meta as unknown as { env?: Record<string, string | boolean | undefined> };
-  const v = meta.env ? meta.env.PROD : undefined;
-  return v === true || v === 'true';
+function envVar(key: string): string | undefined {
+  const v = import.meta.env[key];
+  return typeof v === 'string' ? v : undefined;
 }
 
 export function resolveApiBase(): string {
@@ -25,7 +22,7 @@ export function resolveApiBase(): string {
   } catch {
     /* ignore */
   }
-  return isProd() ? PROD_API_URL : DEV_API_URL;
+  return import.meta.env.PROD ? PROD_API_URL : DEV_API_URL;
 }
 
 export function setApiBase(url: string) {
