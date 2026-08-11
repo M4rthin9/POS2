@@ -32,10 +32,3 @@ npm run deploy:pos   # wrangler pages deploy apps/pos/dist
 npm run deploy:admin # wrangler pages deploy apps/admin/dist
 npm run migrate      # wrangler d1 migrations apply pos2-db
 ```
-
-## Seed accounts
-
-| Role    | Username | PIN |
-|---------|----------|-----|
-| admin   | admin    | 1234 |
-| cashier | cashier  | 0000 |
