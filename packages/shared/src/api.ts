@@ -1,7 +1,14 @@
 // ── Client-side API helper ──
 // Resolves API base URL: VITE_API_URL (build-time) > user override (localStorage) > default.
+// Hosts are tried in order; a blocked/unreachable host is skipped and the working
+// one is remembered. The custom domain is primary because ad blockers commonly
+// block `*.workers.dev` (ERR_BLOCKED_BY_CLIENT).
 
-export const PROD_API_URL = 'https://cida-pos-api.pongsinbas.workers.dev';
+export const PROD_API_URLS = [
+  'https://api.cidapos.dpdns.org',
+  'https://cida-pos-api.pongsinbas.workers.dev',
+];
+export const PROD_API_URL = PROD_API_URLS[0];
 const DEV_API_URL = 'http://localhost:8787';
 
 // NOTE: `import.meta.env` must be accessed literally — Vite statically replaces
@@ -33,8 +40,28 @@ export function setApiBase(url: string) {
   }
 }
 
-export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(resolveApiBase() + path, init);
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const bases = apiBases();
+  let lastErr: unknown;
+  for (let i = 0; i < bases.length; i++) {
+    const base = bases[i];
+    try {
+      const res = await fetch(base + path, init);
+      if (res.type === 'error') throw new Error(`blocked: ${base}`);
+      if (i > 0) setApiBase(base);
+      return res;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('API unreachable');
+}
+
+function apiBases(): string[] {
+  const list = [resolveApiBase()];
+  const backups = import.meta.env.PROD ? PROD_API_URLS : [DEV_API_URL];
+  for (const u of backups) if (!list.includes(u)) list.push(u);
+  return list;
 }
 
 export interface ApiEnvelope<T> {
