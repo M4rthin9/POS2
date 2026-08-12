@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { requireAuth } from '../middleware';
 import { ok, fail, badRequest, notFound } from '../lib/http';
 import type { PaymentMethod } from '@cida/shared';
 import type { Env, Variables } from '../env';
+
+type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
 const pos = new Hono<{ Bindings: Env; Variables: Variables }>();
 pos.use('*', requireAuth);
@@ -70,7 +73,7 @@ pos.get('/sales', async (c) => {
   const to = c.req.query('to');
 
   let sql = `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
-                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.created_at
+                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at
              FROM sales s
              JOIN events e ON e.id = s.event_id
              JOIN users u ON u.id = s.cashier_user_id
@@ -102,7 +105,7 @@ pos.get('/sales/:id', async (c) => {
   const user = c.get('user');
   const sale = await c.env.DB.prepare(
     `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
-            s.subtotal, s.discount, s.total, s.payment_method, s.status, s.created_at
+            s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at
      FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id
      WHERE s.id = ?`,
   )
@@ -119,6 +122,19 @@ pos.get('/sales/:id', async (c) => {
 });
 
 // ── Create sale (atomic: stock deducted in same D1 batch as sale+items) ──
+const saleSelect = `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
+       s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at
+FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id`;
+
+async function saleDetail(c: Ctx, id: number) {
+  const sale = await c.env.DB.prepare(`${saleSelect} WHERE s.id = ?`).bind(id).first();
+  if (!sale) return null;
+  const items = await c.env.DB.prepare(
+    'SELECT id, sale_id, product_id, sku, name, qty, price, line_total FROM sale_items WHERE sale_id = ? ORDER BY id',
+  ).bind(id).all();
+  return { ...sale, items: items.results };
+}
+
 pos.post('/sales', async (c) => {
   const body = await c.req.json().catch(() => null);
   const user = c.get('user');
@@ -126,9 +142,16 @@ pos.post('/sales', async (c) => {
   const discount = Math.max(0, Number(body?.discount) || 0);
   const paymentMethod: PaymentMethod = body?.payment_method === 'PromptPay' ? 'PromptPay' : 'Cash';
   const rawItems = Array.isArray(body?.items) ? body.items : [];
+  const clientSaleId = typeof body?.client_sale_id === 'string' && body.client_sale_id.length > 0 && body.client_sale_id.length <= 100 ? body.client_sale_id : null;
 
   if (!Number.isInteger(eventId) || eventId <= 0) return badRequest(c, 'event_id ไม่ถูกต้อง');
   if (rawItems.length === 0) return badRequest(c, 'ไม่มีรายการสินค้า');
+
+  // Idempotent replay: a queued sale retried after a lost response must not duplicate.
+  if (clientSaleId) {
+    const existing = await c.env.DB.prepare('SELECT id FROM sales WHERE client_sale_id = ?').bind(clientSaleId).first();
+    if (existing) return ok(c, await saleDetail(c, Number(existing.id)));
+  }
 
   const event = await c.env.DB.prepare('SELECT id, name FROM events WHERE id = ?').bind(eventId).first();
   if (!event) return badRequest(c, 'ไม่พบกิจกรรมนี้');
@@ -162,14 +185,25 @@ pos.post('/sales', async (c) => {
   const total = Math.round((subtotal - discount) * 100) / 100;
 
   // Insert sale first so we know its id.
-  const saleRes = await c.env.DB.prepare(
-    `INSERT INTO sales (event_id, cashier_user_id, subtotal, discount, total, payment_method, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'COMPLETED', datetime('now')) RETURNING id`,
-  )
-    .bind(eventId, user.id, subtotal, discount, total, paymentMethod)
-    .first();
-  const saleId = Number((saleRes as { id?: unknown })?.id);
-  if (!Number.isInteger(saleId)) return fail(c, 'ไม่สามารถสร้างการขายได้', 500, 'DB_ERROR');
+  let saleId: number;
+  try {
+    const saleRes = await c.env.DB.prepare(
+      `INSERT INTO sales (event_id, cashier_user_id, subtotal, discount, total, payment_method, status, client_sale_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'COMPLETED', ?, datetime('now')) RETURNING id`,
+    )
+      .bind(eventId, user.id, subtotal, discount, total, paymentMethod, clientSaleId)
+      .first();
+    saleId = Number((saleRes as { id?: unknown })?.id);
+    if (!Number.isInteger(saleId)) return fail(c, 'ไม่สามารถสร้างการขายได้', 500, 'DB_ERROR');
+  } catch (e) {
+    // Concurrent duplicate replay: the unique index on client_sale_id rejected
+    // this insert, so another request already created the sale. Return it.
+    if (clientSaleId && e instanceof Error && e.message.includes('UNIQUE')) {
+      const existing = await c.env.DB.prepare('SELECT id FROM sales WHERE client_sale_id = ?').bind(clientSaleId).first();
+      if (existing) return ok(c, await saleDetail(c, Number(existing.id)));
+    }
+    return fail(c, 'ไม่สามารถสร้างการขายได้', 500, 'DB_ERROR');
+  }
 
   // Atomic batch for stock + items. If any statement fails the whole batch
   // rolls back, and we compensate by deleting the orphaned sale.
@@ -199,21 +233,8 @@ pos.post('/sales', async (c) => {
     return fail(c, 'ไม่สามารถบันทึกการขายได้: ' + msg, 500, 'DB_ERROR');
   }
 
-  const created = await c.env.DB.prepare(
-    `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
-            s.subtotal, s.discount, s.total, s.payment_method, s.status, s.created_at
-     FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id
-     WHERE s.id = ?`,
-  )
-    .bind(saleId)
-    .first();
-  const itemsOut = await c.env.DB.prepare(
-    'SELECT id, sale_id, product_id, sku, name, qty, price, line_total FROM sale_items WHERE sale_id = ? ORDER BY id',
-  )
-    .bind(saleId)
-    .all();
-
-  return ok(c, { ...created, items: itemsOut.results }, 201);
+  const created = await saleDetail(c, saleId);
+  return ok(c, created, 201);
 });
 
 export default pos;

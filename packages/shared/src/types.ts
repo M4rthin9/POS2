@@ -75,8 +75,17 @@ export interface Sale {
   total: number;
   payment_method: PaymentMethod;
   status: SaleStatus;
+  client_sale_id: string | null;
   created_at: string;
   items: SaleItem[];
+}
+
+export interface SaleCreateInput {
+  event_id: number;
+  items: { product_id: number; qty: number }[];
+  discount: number;
+  payment_method: PaymentMethod;
+  client_sale_id?: string;
 }
 
 export interface PublicSettings {

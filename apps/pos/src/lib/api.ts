@@ -1,7 +1,7 @@
 // ── Typed API client for the POS app ──
 
 import { apiFetch, parseApi, resolveApiBase, setApiBase, type ApiEnvelope } from '@cida/shared';
-import type { CidaEvent, Division, LoginResponse, Product, PublicSettings, Sale, User } from '@cida/shared';
+import type { CidaEvent, Division, LoginResponse, Product, PublicSettings, Sale, SaleCreateInput, User } from '@cida/shared';
 import { useAuth } from '../store/auth';
 
 export { resolveApiBase, setApiBase };
@@ -64,12 +64,7 @@ export const api = {
   divisions: () => request<Division[]>('/api/divisions'),
   eventProducts: (eventId: number) => request<Product[]>(`/api/events/${eventId}/products`),
 
-  createSale: (input: {
-    event_id: number;
-    items: { product_id: number; qty: number }[];
-    discount: number;
-    payment_method: 'Cash' | 'PromptPay';
-  }) => request<Sale>('/api/sales', { method: 'POST', body: JSON.stringify(input) }),
+  createSale: (input: SaleCreateInput) => request<Sale>('/api/sales', { method: 'POST', body: JSON.stringify(input) }),
 
   mySales: () => request<Sale[]>('/api/sales'),
 
@@ -79,12 +74,7 @@ export const api = {
 
 export interface QueuedSale {
   id: string;
-  payload: {
-    event_id: number;
-    items: { product_id: number; qty: number }[];
-    discount: number;
-    payment_method: 'Cash' | 'PromptPay';
-  };
+  payload: SaleCreateInput;
   created_at: string;
   user_id?: number;
 }
@@ -116,7 +106,7 @@ export async function syncQueue(): Promise<{ ok: number; failed: number }> {
   let failed = 0;
   for (const entry of getQueue()) {
     try {
-      await api.createSale(entry.payload);
+      await api.createSale({ ...entry.payload, client_sale_id: entry.id });
       removeFromQueue(entry.id);
       ok++;
     } catch {

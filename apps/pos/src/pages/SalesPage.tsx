@@ -96,7 +96,13 @@ export default function SalesPage() {
     if (!eventId || items.length === 0) return;
     setBusy(true);
     setError('');
-    const payload = { event_id: eventId, items: items.map((i) => ({ product_id: i.product_id, qty: i.qty })), discount, payment_method: method };
+    const payload = {
+      event_id: eventId,
+      items: items.map((i) => ({ product_id: i.product_id, qty: i.qty })),
+      discount,
+      payment_method: method,
+      client_sale_id: crypto.randomUUID(),
+    };
     if (!navigator.onLine) {
       addToQueue(payload);
       setModal(null);

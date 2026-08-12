@@ -133,10 +133,10 @@ admin.post('/products', async (c) => {
   if (stock !== null && (!Number.isInteger(stock) || stock < 0)) return badRequest(c, 'สต็อกไม่ถูกต้อง');
   try {
     const r = await c.env.DB.prepare(
-      `INSERT INTO products (sku, name, division_id, price, image_url, stock, active) VALUES (?,?,?,?,?,?,?)`,
+      `INSERT INTO products (sku, name, division_id, price, image_url, stock, active) VALUES (?,?,?,?,?,?,?) RETURNING ${productFields}`,
     )
       .bind(sku, name, b?.division_id ? Number(b.division_id) : null, price, b?.image_url || null, stock, b?.active === false ? 0 : 1)
-      .first<Record<string, unknown>>(`SELECT ${productFields} FROM products WHERE id = last_insert_rowid()`);
+      .first<Record<string, unknown>>();
     return ok(c, r, 201);
   } catch (e) {
     if (e instanceof Error && e.message.includes('UNIQUE')) return fail(c, 'SKU ซ้ำ', 409, 'DUPLICATE_SKU');
@@ -435,7 +435,7 @@ admin.get('/sales', async (c) => {
   const from = c.req.query('from');
   const to = c.req.query('to');
   let sql = `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
-                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.created_at
+                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at
              FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id WHERE 1=1`;
   const args: unknown[] = [];
   if (eventId) { sql += ' AND s.event_id = ?'; args.push(Number(eventId)); }
