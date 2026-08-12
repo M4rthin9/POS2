@@ -34,12 +34,12 @@ auth.post('/login', async (c) => {
   const body = await c.req.json().catch(() => null);
   const username = String(body?.username || '').trim();
   const pin = String(body?.pin || '');
-  if (!username || !isValidPin(pin)) return badRequest(c, 'เธเธฃเธธเธ“เธฒเธเธฃเธญเธเธเธทเนเธญเธเธนเนเนเธเนเนเธฅเธฐ PIN');
+  if (!username || !isValidPin(pin)) return badRequest(c, 'กรุณากรอกชื่อผู้ใช้และ PIN');
 
   const state = await getLoginState(c, username);
   if (state && state.locked_until > Date.now()) {
     const mins = Math.ceil((state.locked_until - Date.now()) / 60000);
-    return fail(c, `เธฅเนเธญเธเธเธฑเนเธงเธเธฃเธฒเธง เนเธเธฃเธ”เธฃเธญ ${mins} เธเธฒเธ—เธต`, 429, 'LOCKED');
+    return fail(c, `ล็อกชั่วคราว โปรดรอ ${mins} นาที`, 429, 'LOCKED');
   }
 
   const row = await c.env.DB.prepare(
@@ -53,11 +53,11 @@ auth.post('/login', async (c) => {
     const count = (state?.count || 0) + 1;
     if (count >= LOGIN_MAX_FAILURES) {
       await lockUser(c, username, count);
-      return fail(c, `PIN เธเธดเธ”เธ•เธดเธ”เธ•เนเธญเธเธฑเธ ${count} เธเธฃเธฑเนเธ เธฅเนเธญเธ ${LOGIN_LOCK_MINUTES} เธเธฒเธ—เธต`, 429, 'LOCKED');
+      return fail(c, `PIN ผิดติดต่อกัน ${count} ครั้ง ล็อก ${LOGIN_LOCK_MINUTES} นาที`, 429, 'LOCKED');
     }
     await c.env.CACHE.put(`login:${username}`, JSON.stringify({ count, locked_until: 0 }), { expirationTtl: 15 * 60 });
     const remaining = LOGIN_MAX_FAILURES - count;
-    return fail(c, `เธเธทเนเธญเธเธนเนเนเธเนเธซเธฃเธทเธญ PIN เนเธกเนเธ–เธนเธเธ•เนเธญเธ (เน€เธซเธฅเธทเธญ ${remaining} เธเธฃเธฑเนเธ)`, 401, 'BAD_CREDENTIALS');
+    return fail(c, `ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง (เหลือ ${remaining} ครั้ง)`, 401, 'BAD_CREDENTIALS');
   }
 
   await resetLoginState(c, username);

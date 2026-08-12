@@ -30,17 +30,24 @@ export default function SalesPage() {
   const [showCart, setShowCart] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
 
+  async function loadData() {
+    setError('');
+    await Promise.all([
+      api.publicSettings().then((s) => setSettings(s)),
+      api.divisions().then(setDivisions),
+      api.events().then((evs) => {
+        setEvents(evs);
+        const stillValid = eventId && evs.some((e) => e.id === eventId);
+        if (!stillValid) {
+          const active = evs.find((e) => e.status === 'ACTIVE');
+          setEvent(active ? active.id : evs.length ? evs[0].id : null);
+        }
+      }),
+    ]).catch(() => setError(TH.error));
+  }
+
   useEffect(() => {
-    api.publicSettings().then((s) => setSettings(s)).catch(() => setError(TH.error));
-    api.divisions().then(setDivisions).catch(() => setError(TH.error));
-    api.events().then((evs) => {
-      setEvents(evs);
-      const stillValid = eventId && evs.some((e) => e.id === eventId);
-      if (!stillValid) {
-        const active = evs.find((e) => e.status === 'ACTIVE');
-        setEvent(active ? active.id : evs.length ? evs[0].id : null);
-      }
-    }).catch(() => setError(TH.error));
+    loadData();
   }, []);
 
   useEffect(() => {
@@ -164,7 +171,12 @@ export default function SalesPage() {
       {error && !modal && (
         <div className="bg-red-50 text-red-700 text-sm px-4 py-2 flex items-center justify-between gap-3">
           <span>{error}</span>
-          <button onClick={() => setError('')} className="font-bold px-2">✕</button>
+          <div className="flex items-center gap-3">
+            <button onClick={loadData} className="font-semibold underline">
+              {TH.retry}
+            </button>
+            <button onClick={() => setError('')} className="font-bold px-2">✕</button>
+          </div>
         </div>
       )}
       <div className="flex-1 flex overflow-hidden">

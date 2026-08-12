@@ -23,13 +23,6 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.origin.includes('cida-pos-api') || url.origin.includes('localhost:8787'),
-            handler: 'NetworkFirst',
-            options: { cacheName: 'api' },
-          },
-        ],
       },
     }),
   ],

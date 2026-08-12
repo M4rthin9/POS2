@@ -40,6 +40,7 @@ export const TH = {
   status: 'สถานะ',
   noProducts: 'ไม่พบสินค้า',
   noData: 'ไม่มีข้อมูล',
+  retry: 'ลองใหม่',
   save: 'บันทึก',
   edit: 'แก้ไข',
   delete: 'ลบ',
