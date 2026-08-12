@@ -31,19 +31,26 @@ export default function SalesPage() {
   const receiptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.publicSettings().then((s) => setSettings(s)).catch(() => {});
-    api.divisions().then(setDivisions).catch(() => {});
+    api.publicSettings().then((s) => setSettings(s)).catch(() => setError(TH.error));
+    api.divisions().then(setDivisions).catch(() => setError(TH.error));
     api.events().then((evs) => {
       setEvents(evs);
-      const active = evs.find((e) => e.status === 'ACTIVE');
-      if (active && !eventId) setEvent(active.id);
-      if (!eventId && evs.length && !active) setEvent(evs[0].id);
-    }).catch(() => {});
+      const stillValid = eventId && evs.some((e) => e.id === eventId);
+      if (!stillValid) {
+        const active = evs.find((e) => e.status === 'ACTIVE');
+        setEvent(active ? active.id : evs.length ? evs[0].id : null);
+      }
+    }).catch(() => setError(TH.error));
   }, []);
 
   useEffect(() => {
     if (eventId) {
-      api.eventProducts(eventId).then(setProducts).catch(() => setProducts([]));
+      api.eventProducts(eventId).then(setProducts).catch(() => {
+        setProducts([]);
+        setError(TH.error);
+      });
+    } else {
+      setProducts([]);
     }
   }, [eventId]);
 
@@ -154,6 +161,12 @@ export default function SalesPage() {
       </header>
 
       {/* Main */}
+      {error && !modal && (
+        <div className="bg-red-50 text-red-700 text-sm px-4 py-2 flex items-center justify-between gap-3">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="font-bold px-2">✕</button>
+        </div>
+      )}
       <div className="flex-1 flex overflow-hidden">
         {/* Products */}
         <div className="flex-1 flex flex-col overflow-hidden">

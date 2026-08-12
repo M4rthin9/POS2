@@ -37,7 +37,7 @@ function Layout() {
     <div className="min-h-screen bg-slate-100 flex">
       <aside className="hidden md:flex flex-col w-60 bg-slate-900 text-white">
         <div className="px-4 py-4 border-b border-white/10">
-          <div className="font-bold">CIDA Admin</div>
+          <div className="font-bold tracking-tight">CIDA Admin</div>
           <div className="text-xs text-slate-400">{user?.display_name}</div>
         </div>
         <nav className="flex-1 p-2 space-y-1">
@@ -47,7 +47,7 @@ function Layout() {
               to={n.to}
               end={n.end}
               className={({ isActive }) =>
-                `flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${isActive ? 'bg-white/15 font-semibold' : 'hover:bg-white/10'}`
+                `flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'bg-emerald-500/20 text-emerald-300 font-semibold' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`
               }
             >
               <span>{n.icon}</span>
@@ -55,7 +55,7 @@ function Layout() {
             </NavLink>
           ))}
         </nav>
-        <button onClick={logout} className="m-2 px-3 py-2 rounded-lg bg-red-600/80 hover:bg-red-600 text-sm text-left">
+        <button onClick={logout} className="m-2 px-3 py-2 rounded-lg bg-red-600/80 hover:bg-red-600 text-sm text-left transition-colors">
           🚪 {TH.logout}
         </button>
       </aside>

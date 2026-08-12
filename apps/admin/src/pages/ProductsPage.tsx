@@ -11,9 +11,21 @@ interface Draft {
   price: string;
   stock: string;
   active: boolean;
+  image_url: string | null;
 }
 
-const emptyDraft: Draft = { id: null, sku: '', name: '', division_id: '', price: '', stock: '', active: true };
+const emptyDraft: Draft = { id: null, sku: '', name: '', division_id: '', price: '', stock: '', active: true, image_url: null };
+
+const MAX_IMAGE_BYTES = 700 * 1024;
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<AdminProduct[] | null>(null);
@@ -41,7 +53,24 @@ export default function ProductsPage() {
   }, []);
 
   function startEdit(p: AdminProduct) {
-    setDraft({ id: p.id, sku: p.sku, name: p.name, division_id: p.division_id ?? '', price: String(p.price), stock: p.stock === null ? '' : String(p.stock), active: p.active });
+    setDraft({ id: p.id, sku: p.sku, name: p.name, division_id: p.division_id ?? '', price: String(p.price), stock: p.stock === null ? '' : String(p.stock), active: p.active, image_url: p.image_url ?? null });
+  }
+
+  async function onImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('เลือกไฟล์รูปภาพเท่านั้น');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError('ไฟล์รูปใหญ่เกินไป (ไม่เกิน 700KB)');
+      return;
+    }
+    setError('');
+    const dataUrl = await fileToBase64(file);
+    setDraft((d) => ({ ...d, image_url: dataUrl }));
   }
 
   async function save() {
@@ -58,6 +87,7 @@ export default function ProductsPage() {
       price: Number(draft.price) || 0,
       stock: draft.stock === '' ? null : Number(draft.stock),
       active: draft.active,
+      image_url: draft.image_url,
     };
     try {
       if (draft.id === null) {
@@ -140,20 +170,42 @@ export default function ProductsPage() {
 
       <div className="bg-white rounded-xl shadow-sm p-4 space-y-3">
         <h2 className="font-semibold text-slate-800 text-sm">{draft.id === null ? TH.add : `${TH.edit} #${draft.id}`}</h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <input value={draft.sku} onChange={(e) => setDraft({ ...draft, sku: e.target.value })} placeholder="SKU" className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-          <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={TH.name} className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-          <select value={draft.division_id} onChange={(e) => setDraft({ ...draft, division_id: e.target.value === '' ? '' : Number(e.target.value) })} className="border border-slate-300 rounded-lg px-3 py-2 text-sm">
-            <option value="">— {TH.division} —</option>
-            {divisions.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.icon} {d.name}
-              </option>
-            ))}
-          </select>
-          <div className="grid grid-cols-2 gap-3">
-            <input value={draft.price} onChange={(e) => setDraft({ ...draft, price: e.target.value.replace(/[^\d.]/g, '') })} type="number" min="0" placeholder={TH.price} className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-            <input value={draft.stock} onChange={(e) => setDraft({ ...draft, stock: e.target.value.replace(/[^\d]/g, '') })} type="number" min="0" placeholder={TH.qty} className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-20 h-20 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+              {draft.image_url ? (
+                <img src={draft.image_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-3xl">🛍️</span>
+              )}
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold cursor-pointer text-center transition">
+                เลือกรูป
+                <input type="file" accept="image/*" onChange={onImageSelect} className="hidden" />
+              </label>
+              {draft.image_url && (
+                <button onClick={() => setDraft((d) => ({ ...d, image_url: null }))} className="text-xs text-red-500 hover:underline">
+                  ลบรูป
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <input value={draft.sku} onChange={(e) => setDraft({ ...draft, sku: e.target.value })} placeholder="SKU" className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-400" />
+            <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={TH.name} className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-400" />
+            <select value={draft.division_id} onChange={(e) => setDraft({ ...draft, division_id: e.target.value === '' ? '' : Number(e.target.value) })} className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-400">
+              <option value="">— {TH.division} —</option>
+              {divisions.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.icon} {d.name}
+                </option>
+              ))}
+            </select>
+            <div className="grid grid-cols-2 gap-3">
+              <input value={draft.price} onChange={(e) => setDraft({ ...draft, price: e.target.value.replace(/[^\d.]/g, '') })} type="number" min="0" placeholder={TH.price} className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-400" />
+              <input value={draft.stock} onChange={(e) => setDraft({ ...draft, stock: e.target.value.replace(/[^\d]/g, '') })} type="number" min="0" placeholder={TH.qty} className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-400" />
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -161,11 +213,11 @@ export default function ProductsPage() {
             <input type="checkbox" checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} className="w-4 h-4" />
             {TH.active}
           </label>
-          <button onClick={save} disabled={busy} className="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-semibold disabled:opacity-40">
+          <button onClick={save} disabled={busy} className="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-semibold hover:bg-slate-700 transition disabled:opacity-40">
             {busy ? '…' : TH.save}
           </button>
           {draft.id !== null && (
-            <button onClick={() => setDraft(emptyDraft)} className="text-sm text-slate-500">
+            <button onClick={() => setDraft(emptyDraft)} className="text-sm text-slate-500 hover:text-slate-700">
               {TH.cancel}
             </button>
           )}
@@ -177,6 +229,7 @@ export default function ProductsPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
+                <th className="px-4 py-2" />
                 <th className="px-4 py-2 text-left font-medium">SKU</th>
                 <th className="px-4 py-2 text-left font-medium">{TH.name}</th>
                 <th className="px-4 py-2 text-left font-medium">{TH.division}</th>
@@ -189,19 +242,24 @@ export default function ProductsPage() {
             <tbody className="divide-y divide-slate-100">
               {products === null ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                     …
                   </td>
                 </tr>
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                     {TH.noData}
                   </td>
                 </tr>
               ) : (
                 products.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50">
+                  <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-2">
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center text-base">
+                        {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : '🛍️'}
+                      </div>
+                    </td>
                     <td className="px-4 py-2 font-mono text-xs">{p.sku}</td>
                     <td className="px-4 py-2">{p.name}</td>
                     <td className="px-4 py-2 text-slate-500">{p.division_name ?? '—'}</td>
