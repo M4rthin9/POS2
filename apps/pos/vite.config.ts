@@ -27,7 +27,7 @@ export default defineConfig({
           {
             urlPattern: ({ url }) => url.origin.includes('cida-pos-api') || url.origin.includes('localhost:8787'),
             handler: 'NetworkFirst',
-            options: { cacheName: 'api', networkTimeoutSeconds: 4 },
+            options: { cacheName: 'api' },
           },
         ],
       },
