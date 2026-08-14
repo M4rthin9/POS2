@@ -39,16 +39,9 @@ export function printNode(node: HTMLElement | null | undefined, opts?: { skipWeb
   if (orientation) doc.documentElement.setAttribute('data-print-orientation', orientation);
 
   // Copy the app's styles so Tailwind utility classes and the @media print
-  // rules apply identically. Web fonts are skipped when the target uses only
-  // system fonts (the receipt) to avoid a font fetch delaying the preview.
-  document.querySelectorAll('style, link[rel="stylesheet"]').forEach((el) => {
-    if (el instanceof HTMLStyleElement) {
-      doc.head.appendChild(el.cloneNode(true));
-    } else if (el instanceof HTMLLinkElement) {
-      if (opts?.skipWebFonts && el.href.includes('fonts.googleapis.com')) return;
-      doc.head.appendChild(el.cloneNode(true));
-    }
-  });
+  // rules apply identically. The rules are inlined as text — cloning the
+  // <link> tags would race the stylesheet fetch and print an unstyled page.
+  copyStyles(doc, opts?.skipWebFonts ?? false);
 
   doc.body.appendChild(node.cloneNode(true));
 
@@ -63,4 +56,30 @@ export function printNode(node: HTMLElement | null | undefined, opts?: { skipWeb
   // Guard for engines where print() returns immediately: give the preview time
   // to capture the cloned content before tearing the iframe down.
   window.setTimeout(done, 3000);
+}
+
+function copyStyles(doc: Document, skipWebFonts: boolean): void {
+  for (const sheet of Array.from(document.styleSheets)) {
+    const href = sheet.href ?? '';
+    if (skipWebFonts && href.includes('fonts.googleapis.com')) continue;
+    let css = '';
+    try {
+      for (const rule of Array.from(sheet.cssRules)) css += rule.cssText + '\n';
+    } catch {
+      // Cross-origin sheet (Google Fonts) is not readable via CSSOM — load it
+      // as a normal <link>; fonts swap in once fetched.
+      if (href) {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        doc.head.appendChild(link);
+      }
+      continue;
+    }
+    if (css) {
+      const style = document.createElement('style');
+      style.textContent = css;
+      doc.head.appendChild(style);
+    }
+  }
 }
