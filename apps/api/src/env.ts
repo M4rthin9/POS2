@@ -10,7 +10,7 @@ export interface AuthUser {
   id: number;
   username: string;
   display_name: string;
-  role: 'admin' | 'cashier';
+  role: 'superadmin' | 'admin' | 'cashier';
 }
 
 export type Variables = {

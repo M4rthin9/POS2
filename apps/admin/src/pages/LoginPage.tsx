@@ -16,7 +16,7 @@ export default function LoginPage() {
     setError('');
     try {
       const res = await api.login(username.trim(), pin);
-      if (res.user.role !== 'admin') {
+      if (res.user.role !== 'admin' && res.user.role !== 'superadmin') {
         setError('บัญชีนี้ไม่มีสิทธิ์ใช้งาน Admin');
         return;
       }

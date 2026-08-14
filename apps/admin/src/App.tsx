@@ -35,7 +35,7 @@ function Layout() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      <aside className="hidden md:flex flex-col w-60 bg-slate-900 text-white">
+      <aside className="no-print hidden md:flex flex-col w-60 bg-slate-900 text-white">
         <div className="px-4 py-4 border-b border-white/10">
           <div className="font-bold tracking-tight">CIDA Admin</div>
           <div className="text-xs text-slate-400">{user?.display_name}</div>
@@ -61,7 +61,7 @@ function Layout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="md:hidden bg-slate-900 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+        <div className="no-print md:hidden bg-slate-900 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-20">
           <div className="font-bold">CIDA Admin</div>
           <div className="flex gap-2">
             {NAV.map((n) => (
@@ -74,7 +74,7 @@ function Layout() {
             </button>
           </div>
         </div>
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
+        <main className="flex-1 p-4 md:p-6 overflow-auto print:overflow-visible print:p-0">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/products" element={<ProductsPage />} />
@@ -94,7 +94,7 @@ function Layout() {
 export default function App() {
   const user = useAuth((s) => s.user);
   const accessToken = useAuth((s) => s.accessToken);
-  const authed = !!user && !!accessToken && user.role === 'admin';
+  const authed = !!user && !!accessToken && (user.role === 'admin' || user.role === 'superadmin');
 
   if (!authed) {
     return (

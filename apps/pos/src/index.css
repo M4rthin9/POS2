@@ -10,7 +10,7 @@ body,
 
 body {
   font-family: 'Noto Sans Thai', system-ui, sans-serif;
-  background: #f8fafc;
+  background: #f1f5f9;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -20,6 +20,19 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Thin subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @media print {
@@ -35,5 +48,8 @@ body {
     left: 0;
     top: 0;
     width: 80mm;
+  }
+  #receipt-print[data-print-size='58mm'] {
+    width: 58mm;
   }
 }

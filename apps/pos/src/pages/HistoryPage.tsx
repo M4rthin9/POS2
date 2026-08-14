@@ -33,35 +33,41 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
-      <header className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+      <header className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-4 py-3 flex items-center justify-between shadow-lg">
         <div>
           <div className="font-bold leading-tight">{TH.history}</div>
           <div className="text-xs text-slate-300">
-            {user?.display_name} · {user?.role === 'admin' ? TH.admin : TH.cashier}
+            {user?.display_name} · {user?.role === 'admin' || user?.role === 'superadmin' ? TH.admin : TH.cashier}
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => navigate('/')} className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">
+          <button onClick={() => navigate('/')} className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm transition">
             ← {TH.back}
           </button>
-          <button onClick={logout} className="px-3 py-1.5 rounded-lg bg-red-600/80 hover:bg-red-600 text-sm">
+          <button onClick={logout} className="px-3 py-1.5 rounded-lg bg-red-600/80 hover:bg-red-600 text-sm transition">
             {TH.logout}
           </button>
         </div>
       </header>
 
-      <div className="p-4 max-w-3xl mx-auto w-full flex-1">
-        <div className="flex items-center justify-between mb-3">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={TH.search}
-            className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-800 mr-3"
-          />
-          <div className="text-sm text-slate-600 whitespace-nowrap">
-            {TH.total} <span className="font-bold text-emerald-600">{fmt(total)}</span>
+      <div className="p-4 max-w-3xl mx-auto w-full flex-1 space-y-3">
+        <div className="bg-white rounded-2xl shadow-sm p-4 flex items-center justify-between">
+          <div>
+            <div className="text-xs text-slate-500">{TH.totalRevenue}</div>
+            <div className="text-2xl font-bold text-emerald-600">{fmt(total)}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-slate-500">{TH.totalSales}</div>
+            <div className="text-2xl font-bold text-slate-800">{sales?.length ?? 0}</div>
           </div>
         </div>
+
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`${TH.search} (#, ${TH.cashier}, ${TH.event})`}
+          className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white"
+        />
 
         {sales === null ? (
           <div className="text-center text-slate-400 mt-20">…</div>
@@ -73,22 +79,26 @@ export default function HistoryPage() {
         ) : (
           <div className="space-y-2">
             {filtered.map((s) => (
-              <div key={s.id} className="bg-white rounded-xl shadow-sm p-3 flex items-center gap-3">
+              <div key={s.id} className="bg-white rounded-2xl shadow-sm p-3.5 flex items-center gap-3 hover:shadow-md transition">
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm">
+                  <div className="font-semibold text-sm flex items-center gap-2">
                     #{String(s.id).padStart(6, '0')}
-                    <span className="text-slate-400 font-normal"> · {s.event_name ?? '-'}</span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                        s.payment_method === 'PromptPay' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {PAYMENT_LABELS[s.payment_method] ?? s.payment_method}
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-500">
-                    {fmtDate(s.created_at)} · {s.cashier_name ?? '-'} · {PAYMENT_LABELS[s.payment_method] ?? s.payment_method}
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {fmtDate(s.created_at)} · {s.event_name ?? '-'}
                     {s.discount > 0 && <> · {TH.discount} {fmt(s.discount)}</>}
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="font-bold text-emerald-600">{fmt(s.total)}</div>
-                  <div className="text-xs text-slate-400">
-                    {s.items?.length ?? 0} รายการ
-                  </div>
+                  <div className="text-xs text-slate-400">{s.items?.length ?? 0} รายการ</div>
                 </div>
               </div>
             ))}

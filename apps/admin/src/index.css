@@ -9,3 +9,28 @@ html {
 body {
   font-family: 'Noto Sans Thai', ui-sans-serif, system-ui, sans-serif;
 }
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  #report-print {
+    display: block;
+  }
+}
+

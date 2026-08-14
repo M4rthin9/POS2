@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'cashier';
+export type Role = 'superadmin' | 'admin' | 'cashier';
 export type EventStatus = 'ACTIVE' | 'UPCOMING' | 'CLOSED';
 export type PaymentMethod = 'Cash' | 'PromptPay';
 export type SaleStatus = 'COMPLETED' | 'REFUNDED' | 'VOID';
@@ -95,6 +95,8 @@ export interface PublicSettings {
   tax_id: string;
   promptpay_id: string;
   receipt_footer: string;
+  logo_url: string;
+  print_size: string;
 }
 
 export interface Overview {
@@ -130,6 +132,8 @@ export interface Settings {
   tax_id: string;
   promptpay_id: string;
   receipt_footer: string;
+  logo_url: string;
+  print_size: string;
 }
 
 export interface ApiResponse<T = unknown> {

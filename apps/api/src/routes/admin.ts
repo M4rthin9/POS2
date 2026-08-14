@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { requireAuth, requireAdmin } from '../middleware';
+import { requireAuth, requireAdmin, requireSuperAdmin } from '../middleware';
 import { ok, fail, badRequest, notFound } from '../lib/http';
 import { hashPin, randomSalt, isValidPin } from '../lib/password';
 import type { Env, Variables } from '../env';
@@ -295,7 +295,7 @@ admin.post('/users', async (c) => {
   const b = await c.req.json().catch(() => null);
   const username = String(b?.username || '').trim();
   const displayName = String(b?.display_name || '').trim();
-  const role = b?.role === 'admin' ? 'admin' : 'cashier';
+  const role = b?.role === 'superadmin' || b?.role === 'admin' ? b.role : 'cashier';
   const pin = String(b?.pin || '');
   if (!username || !displayName) return badRequest(c, 'กรอกชื่อผู้ใช้และชื่อแสดง');
   if (!isValidPin(pin)) return badRequest(c, 'PIN ต้องเป็นตัวเลข 4–6 หลัก');
@@ -319,8 +319,12 @@ admin.put('/users/:id', async (c) => {
   if (!cur) return notFound(c);
   const username = String(b?.username ?? cur.username ?? '').trim();
   const displayName = String(b?.display_name ?? cur.display_name ?? '').trim();
-  const role = b?.role ? (b.role === 'admin' ? 'admin' : 'cashier') : cur.role;
+  const role = b?.role ? (b.role === 'superadmin' || b.role === 'admin' ? b.role : 'cashier') : cur.role;
   if (!username || !displayName) return badRequest(c, 'กรอกชื่อผู้ใช้และชื่อแสดง');
+  if ((cur.role as string) === 'superadmin' && role !== 'superadmin') {
+    const count = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'superadmin'").first<{ n: number }>();
+    if (Number(count?.n) <= 1) return fail(c, 'ไม่สามารถลดสิทธิ์ superadmin คนสุดท้าย', 400);
+  }
   let pinHash = cur.pin_hash as string;
   let pinSalt = cur.pin_salt as string;
   if (b?.pin) {
@@ -343,6 +347,11 @@ admin.put('/users/:id', async (c) => {
 admin.delete('/users/:id', async (c) => {
   const id = Number(c.req.param('id'));
   if (id === c.get('user').id) return fail(c, 'ไม่สามารถลบบัญชีของตัวเอง', 400);
+  const target = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(id).first<{ role: string }>();
+  if (target?.role === 'superadmin') {
+    const count = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'superadmin'").first<{ n: number }>();
+    if (Number(count?.n) <= 1) return fail(c, 'ไม่สามารถลบ superadmin คนสุดท้าย', 400);
+  }
   await c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
   return ok(c, { deleted: id });
 });
@@ -412,7 +421,7 @@ admin.get('/settings', async (c) => {
 
 admin.put('/settings', async (c) => {
   const b = await c.req.json().catch(() => null);
-  const allowed = ['org_name', 'org_subtitle', 'org_address', 'tax_id', 'promptpay_id', 'receipt_footer', 'print_size'];
+  const allowed = ['org_name', 'org_subtitle', 'org_address', 'tax_id', 'promptpay_id', 'receipt_footer', 'print_size', 'logo_url'];
   const stmts: D1PreparedStatement[] = [];
   for (const key of allowed) {
     if (b && key in b) {
@@ -445,6 +454,60 @@ admin.get('/sales', async (c) => {
   sql += ' ORDER BY s.id DESC LIMIT 500';
   const { results } = await c.env.DB.prepare(sql).bind(...args).all();
   return ok(c, results);
+});
+
+// ── Delete sales (permanent) — superadmin only ──
+// Deletes sale + items and restores stock in a single atomic D1 batch.
+async function buildDeleteStatements(db: D1Database, ids: number[]) {
+  const stmts: D1PreparedStatement[] = [];
+  const placeholders = ids.map(() => '?').join(',');
+  const items = await db
+    .prepare(`SELECT sale_id, product_id, qty FROM sale_items WHERE sale_id IN (${placeholders})`)
+    .bind(...ids)
+    .all<{ sale_id: number; product_id: number | null; qty: number }>();
+  const productIds = [...new Set(items.results.filter((i) => i.product_id !== null).map((i) => i.product_id as number))];
+  const tracked = new Set<number>();
+  if (productIds.length) {
+    const pph = productIds.map(() => '?').join(',');
+    const products = await db.prepare(`SELECT id, stock FROM products WHERE id IN (${pph}) AND stock IS NOT NULL`).bind(...productIds).all<{ id: number; stock: number }>();
+    for (const p of products.results) tracked.add(Number(p.id));
+  }
+  for (const item of items.results) {
+    if (item.product_id !== null && tracked.has(item.product_id)) {
+      stmts.push(db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').bind(Number(item.qty), item.product_id));
+    }
+  }
+  for (const id of ids) {
+    stmts.push(db.prepare('DELETE FROM sale_items WHERE sale_id = ?').bind(id));
+    stmts.push(db.prepare('DELETE FROM sales WHERE id = ?').bind(id));
+  }
+  return stmts;
+}
+
+admin.delete('/sales/:id', requireSuperAdmin, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return badRequest(c, 'เลขที่การขายไม่ถูกต้อง');
+  const sale = await c.env.DB.prepare('SELECT id FROM sales WHERE id = ?').bind(id).first();
+  if (!sale) return notFound(c);
+  const stmts = await buildDeleteStatements(c.env.DB, [id]);
+  await c.env.DB.batch(stmts);
+  return ok(c, { deleted: 1 });
+});
+
+admin.post('/sales/bulk-delete', requireSuperAdmin, async (c) => {
+  const b = await c.req.json().catch(() => null);
+  const ids = Array.isArray((b as { ids?: unknown })?.ids)
+    ? ((b as { ids: unknown[] }).ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0) as number[])
+    : [];
+  if (ids.length === 0) return badRequest(c, 'ไม่พบรายการที่เลือก');
+  if (ids.length > 500) return badRequest(c, 'เลือกลบได้ครั้งละไม่เกิน 500 รายการ');
+  const unique = [...new Set(ids)];
+  const rows = await c.env.DB.prepare(`SELECT id FROM sales WHERE id IN (${unique.map(() => '?').join(',')})`).bind(...unique).all<{ id: number }>();
+  const existing = unique.filter((id) => rows.results.some((r) => r.id === id));
+  if (existing.length === 0) return notFound(c);
+  const stmts = await buildDeleteStatements(c.env.DB, existing);
+  await c.env.DB.batch(stmts);
+  return ok(c, { deleted: existing.length });
 });
 
 export default admin;

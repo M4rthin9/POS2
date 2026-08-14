@@ -22,7 +22,7 @@ export async function requireAuth(c: AppContext, next: Next) {
       id: row.id as number,
       username: row.username as string,
       display_name: row.display_name as string,
-      role: row.role as 'admin' | 'cashier',
+      role: row.role as 'superadmin' | 'admin' | 'cashier',
     } satisfies AuthUser);
     await next();
   } catch {
@@ -32,6 +32,12 @@ export async function requireAuth(c: AppContext, next: Next) {
 
 export async function requireAdmin(c: AppContext, next: Next) {
   const user = c.get('user');
-  if (!user || user.role !== 'admin') return unauthorized(c, 'Admin access required');
+  if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) return unauthorized(c, 'Admin access required');
+  await next();
+}
+
+export async function requireSuperAdmin(c: AppContext, next: Next) {
+  const user = c.get('user');
+  if (!user || user.role !== 'superadmin') return unauthorized(c, 'Superadmin access required');
   await next();
 }

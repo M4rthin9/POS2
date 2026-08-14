@@ -61,7 +61,7 @@ auth.post('/login', async (c) => {
   }
 
   await resetLoginState(c, username);
-  const user = { id: row.id as number, username: username, display_name: row.display_name as string, role: row.role as 'admin' | 'cashier' };
+  const user = { id: row.id as number, username: username, display_name: row.display_name as string, role: row.role as 'superadmin' | 'admin' | 'cashier' };
   const secret = c.env.JWT_SECRET as string;
   const access_token = await signAccessToken(user, secret, ACCESS_TTL);
   const jti = crypto.randomUUID();
@@ -88,7 +88,7 @@ auth.post('/refresh', async (c) => {
     if (!row) return unauthorized(c);
 
     await c.env.CACHE.delete(`rt:${hash}`);
-    const user = { id: row.id as number, username: row.username as string, display_name: row.display_name as string, role: row.role as 'admin' | 'cashier' };
+    const user = { id: row.id as number, username: row.username as string, display_name: row.display_name as string, role: row.role as 'superadmin' | 'admin' | 'cashier' };
     const access_token = await signAccessToken(user, secret, ACCESS_TTL);
     const jti = crypto.randomUUID();
     const newRefresh = await signRefreshToken(user, secret, REFRESH_TTL, jti);

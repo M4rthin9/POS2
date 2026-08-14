@@ -14,7 +14,7 @@ export interface AdminUser {
   id: number;
   username: string;
   display_name: string;
-  role: 'admin' | 'cashier';
+  role: 'superadmin' | 'admin' | 'cashier';
   active: number;
   created_at: string;
 }
@@ -136,4 +136,8 @@ export const api = {
     const qs = p.toString();
     return request<Sale[]>(`/api/admin/sales${qs ? `?${qs}` : ''}`);
   },
+
+  deleteSale: (id: number) => request<{ deleted: number }>(`/api/admin/sales/${id}`, { method: 'DELETE' }),
+  bulkDeleteSales: (ids: number[]) =>
+    request<{ deleted: number }>('/api/admin/sales/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
 };

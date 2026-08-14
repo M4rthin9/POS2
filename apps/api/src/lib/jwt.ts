@@ -30,7 +30,7 @@ export async function signRefreshToken(user: AuthUser, secret: string, ttlSecond
 
 export interface VerifiedToken {
   userId: number;
-  role: 'admin' | 'cashier';
+  role: 'superadmin' | 'admin' | 'cashier';
   jti?: string;
 }
 
@@ -38,7 +38,8 @@ export async function verifyToken(token: string, secret: string): Promise<Verifi
   const { payload } = await jwtVerify(token, secretKey(secret));
   const userId = Number(payload.sub);
   if (!Number.isInteger(userId)) throw new Error('invalid subject');
-  return { userId, role: payload.role === 'admin' ? 'admin' : 'cashier', jti: payload.jti };
+  const role = payload.role === 'superadmin' || payload.role === 'admin' ? payload.role : 'cashier';
+  return { userId, role, jti: payload.jti };
 }
 
 export async function sha256hex(input: string): Promise<string> {

@@ -6,6 +6,7 @@ const FIELDS: { key: string; label: string }[] = [
   { key: 'org_name', label: TH.orgName },
   { key: 'org_subtitle', label: TH.orgSubtitle },
   { key: 'org_address', label: TH.orgAddress },
+  { key: 'logo_url', label: TH.logoUrl },
   { key: 'tax_id', label: TH.taxId },
   { key: 'promptpay_id', label: TH.promptpayId },
   { key: 'receipt_footer', label: TH.receiptFooter },

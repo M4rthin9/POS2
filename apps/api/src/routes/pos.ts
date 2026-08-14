@@ -12,7 +12,7 @@ pos.use('*', requireAuth);
 
 // ── Public settings (receipt header, PromptPay ID) ──
 pos.get('/settings/public', async (c) => {
-  const rows = await c.env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('org_name','org_subtitle','org_address','tax_id','promptpay_id','receipt_footer')").all();
+  const rows = await c.env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('org_name','org_subtitle','org_address','tax_id','promptpay_id','receipt_footer','logo_url','print_size')").all();
   const map: Record<string, string> = {};
   for (const r of rows.results) map[r.key as string] = (r.value as string) ?? '';
   return ok(c, {
@@ -22,6 +22,8 @@ pos.get('/settings/public', async (c) => {
     tax_id: map.tax_id || '',
     promptpay_id: map.promptpay_id || '',
     receipt_footer: map.receipt_footer || '',
+    logo_url: map.logo_url || '',
+    print_size: map.print_size || '80mm',
   });
 });
 
@@ -79,7 +81,7 @@ pos.get('/sales', async (c) => {
              JOIN users u ON u.id = s.cashier_user_id
              WHERE 1=1`;
   const args: unknown[] = [];
-  if (user.role !== 'admin') {
+  if (user.role !== 'admin' && user.role !== 'superadmin') {
     sql += ' AND s.cashier_user_id = ?';
     args.push(user.id);
   }
@@ -112,7 +114,7 @@ pos.get('/sales/:id', async (c) => {
     .bind(id)
     .first();
   if (!sale) return notFound(c);
-  if (user.role !== 'admin' && sale.cashier_user_id !== user.id) return notFound(c);
+  if (user.role !== 'admin' && user.role !== 'superadmin' && sale.cashier_user_id !== user.id) return notFound(c);
   const items = await c.env.DB.prepare(
     'SELECT id, sale_id, product_id, sku, name, qty, price, line_total FROM sale_items WHERE sale_id = ? ORDER BY id',
   )

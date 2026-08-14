@@ -44,6 +44,10 @@ export default function UsersPage() {
       setError('กรอกชื่อผู้ใช้และชื่อแสดง');
       return;
     }
+    if (draft.id !== null && draft.id === me?.id && draft.role !== me.role) {
+      setError('ไม่สามารถเปลี่ยนสิทธิ์ของบัญชีตัวเอง');
+      return;
+    }
     if (draft.id === null && !/^\d{4,6}$/.test(draft.pin)) {
       setError('PIN ต้องเป็นตัวเลข 4–6 หลัก');
       return;
@@ -113,6 +117,7 @@ export default function UsersPage() {
           <select value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value })} className="border border-slate-300 rounded-lg px-3 py-2 text-sm">
             <option value="cashier">{TH.cashier}</option>
             <option value="admin">{TH.admin}</option>
+            <option value="superadmin">{TH.superadmin}</option>
           </select>
           <input
             value={draft.pin}
@@ -169,8 +174,8 @@ export default function UsersPage() {
                     {u.id === me?.id && <span className="ml-2 text-xs text-slate-400">(me)</span>}
                   </td>
                   <td className="px-4 py-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}`}>
-                      {u.role === 'admin' ? TH.admin : TH.cashier}
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${u.role === 'superadmin' ? 'bg-rose-100 text-rose-700' : u.role === 'admin' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}`}>
+                      {u.role === 'superadmin' ? TH.superadmin : u.role === 'admin' ? TH.admin : TH.cashier}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-center">
