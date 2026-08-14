@@ -5,7 +5,7 @@ import { api, type AdminEvent } from '../lib/api';
 import { periodRange } from '../lib/period';
 import PeriodPicker, { type PeriodState } from '../components/PeriodPicker';
 import { Button, ErrorBar } from '../components/ui';
-import { GovDocHeader, GovSection, PrintDoc, SignatureBlock } from '../components/PrintDoc';
+import { GovDocHeader, GovSection, PrintDoc } from '../components/PrintDoc';
 
 /**
  * The single formal document handed to the Commander. Structure follows the
@@ -42,6 +42,10 @@ export default function ReportPage() {
   const { from, to } = periodRange(range.period, range.from, range.to);
   const s = report?.settings ?? {};
   const t = report?.totals;
+
+  const paid = (t?.cash ?? 0) + (t?.promptpay ?? 0);
+  const cashShare = paid > 0 ? ((t?.cash ?? 0) / paid) * 100 : 0;
+  const ppShare = paid > 0 ? ((t?.promptpay ?? 0) / paid) * 100 : 0;
 
   const periodText =
     from && to
@@ -96,23 +100,49 @@ export default function ReportPage() {
           <>
             {/* ── 1. Overview ── */}
             <GovSection no={1} title={TH.reportOverview}>
-              <table className="gov-table">
-                <tbody>
-                  <tr>
-                    <Metric label={TH.eventCount} value={`${report.events.length} กิจกรรม`} />
-                    <Metric label={TH.billCount} value={`${t?.count ?? 0} ใบ`} />
-                    <Metric label={TH.itemCount} value={`${fmtQty(t?.item_qty ?? 0)} ชิ้น`} />
-                    <Metric label={TH.netRevenue} value={`${fmtAmt(t?.net ?? 0)} บาท`} strong />
-                  </tr>
-                  <tr>
-                    <Metric label={TH.grossSales} value={`${fmtAmt(t?.gross ?? 0)} บาท`} />
-                    <Metric label={TH.totalDiscount} value={`${fmtAmt(t?.discount ?? 0)} บาท`} />
-                    <Metric label={TH.cash} value={`${fmtAmt(t?.cash ?? 0)} บาท`} />
-                    <Metric label={TH.promptpay} value={`${fmtAmt(t?.promptpay ?? 0)} บาท`} />
-                  </tr>
-                </tbody>
-              </table>
-              <p className="text-[10pt] text-slate-600 mt-2">{TH.attachmentNote}</p>
+              <div className="summary-panel">
+                <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+                  <div className="min-w-0">
+                    <div className="text-[9pt] text-slate-500">{TH.netRevenue}</div>
+                    <div className="text-[24pt] font-bold leading-none text-emerald-800 mt-1">
+                      {fmtAmt(t?.net ?? 0)}
+                      <span className="text-[12pt] font-semibold text-slate-600"> บาท</span>
+                    </div>
+                    <div className="text-[9pt] text-slate-500 mt-1.5">
+                      {TH.grossSales} {fmtAmt(t?.gross ?? 0)} บาท · {TH.totalDiscount} {fmtAmt(t?.discount ?? 0)} บาท
+                    </div>
+                  </div>
+
+                  <div className="flex-1 max-w-xs min-w-56">
+                    {paid > 0 && (
+                      <>
+                        <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100 border border-slate-200">
+                          <div className="h-full bg-emerald-600" style={{ width: `${cashShare}%` }} />
+                          <div className="h-full bg-slate-300" style={{ width: `${ppShare}%` }} />
+                        </div>
+                        <div className="flex justify-between gap-6 mt-2 text-[9pt]">
+                          <span className="flex items-center gap-1.5 text-slate-600">
+                            <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                            {TH.cash} <strong className="text-slate-800">{fmtAmt(t?.cash ?? 0)}</strong>
+                          </span>
+                          <span className="flex items-center gap-1.5 text-slate-600">
+                            <span className="h-2 w-2 rounded-full bg-slate-300" />
+                            {TH.promptpay} <strong className="text-slate-800">{fmtAmt(t?.promptpay ?? 0)}</strong>
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-lg overflow-hidden">
+                  <Stat label={TH.eventCount} value={`${report.events.length} กิจกรรม`} />
+                  <Stat label={TH.billCount} value={`${t?.count ?? 0} ใบ`} />
+                  <Stat label={TH.itemCount} value={`${fmtQty(t?.item_qty ?? 0)} ชิ้น`} />
+                  <Stat label={TH.products} value={`${report.product_summary.length} รายการ`} />
+                </div>
+                <p className="text-[9pt] text-slate-500 mt-2.5">{TH.attachmentNote}</p>
+              </div>
             </GovSection>
 
             {/* ── 2. Per-event detail ── */}
@@ -121,17 +151,27 @@ export default function ReportPage() {
                 <p className="text-slate-500">{TH.noSalesInPeriod}</p>
               ) : (
                 report.events.map((ev, evIdx) => (
-                  <div key={ev.id} className={`avoid-break ${evIdx > 0 ? 'mt-6' : ''}`}>
-                    <h4 className="font-bold text-slate-900 border-b border-slate-800 pb-1 mb-2">
-                      {`2.${evIdx + 1}`} กิจกรรม: {ev.name}{' '}
-                      <span className="font-normal text-slate-600">
-                        ({ev.code}
-                        {ev.date ? ` · ${fmtThaiLong(ev.date)}` : ''}
-                        {ev.location ? ` · ${ev.location}` : ''})
-                      </span>
-                    </h4>
+                  <div key={ev.id} className={`avoid-break ${evIdx > 0 ? 'mt-5' : ''}`}>
+                    <div className="event-strip">
+                      <div className="min-w-0">
+                        <div className="font-bold text-[11pt] leading-tight text-slate-900">
+                          {`2.${evIdx + 1}`} {ev.name}
+                        </div>
+                        <div className="text-[9pt] text-slate-500 leading-tight">
+                          {[ev.code, ev.date && fmtThaiLong(ev.date), ev.location].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                      <div className="flex-none pl-4 text-right">
+                        <div className="text-[9pt] text-slate-500 leading-tight">
+                          {ev.totals.count} ใบเสร็จ · {fmtQty(ev.totals.item_qty)} ชิ้น
+                        </div>
+                        <div className="text-[10pt] font-bold text-emerald-800 leading-tight mt-0.5">
+                          {fmtAmt(ev.totals.net)} <span className="text-[8.5pt] font-medium text-slate-500">บาท</span>
+                        </div>
+                      </div>
+                    </div>
 
-                    <table className="gov-table">
+                    <table className="report-table">
                       <thead>
                         <tr>
                           <th className="w-8">ที่</th>
@@ -140,7 +180,7 @@ export default function ReportPage() {
                           <th>{TH.name}</th>
                           <th className="w-10 text-right">{TH.qty}</th>
                           <th className="w-16 text-right">{TH.lineTotal}</th>
-                          <th className="w-20">ชำระ</th>
+                          <th className="w-24">ชำระ</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -157,10 +197,18 @@ export default function ReportPage() {
                             </td>
                             <td className="text-right">{fmtQty(sale.item_qty)}</td>
                             <td className="text-right font-semibold">{fmtAmt(sale.total)}</td>
-                            <td>
-                              {sale.tenders.length > 1
-                                ? sale.tenders.map((x) => `${PAYMENT_LABELS[x.method] ?? x.method} ${fmtAmt(x.amount)}`).join(' + ')
-                                : PAYMENT_LABELS[sale.payment_method] ?? sale.payment_method}
+                            <td className="whitespace-nowrap">
+                              {sale.tenders.length > 1 ? (
+                                <span className="block leading-snug">
+                                  {sale.tenders.map((x) => (
+                                    <span key={`${x.method}-${x.amount}`} className="block">
+                                      {PAYMENT_LABELS[x.method] ?? x.method} {fmtAmt(x.amount)}
+                                    </span>
+                                  ))}
+                                </span>
+                              ) : (
+                                PAYMENT_LABELS[sale.payment_method] ?? sale.payment_method
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -172,8 +220,11 @@ export default function ReportPage() {
                           </td>
                           <td className="text-right font-bold">{fmtQty(ev.totals.item_qty)}</td>
                           <td className="text-right font-bold">{fmtAmt(ev.totals.net)}</td>
-                          <td className="text-slate-600">
-                            {TH.cash} {fmtAmt(ev.totals.cash)} · {TH.promptpay} {fmtAmt(ev.totals.promptpay)}
+                          <td className="text-center whitespace-nowrap px-3">
+                            <span className="block text-[9pt] text-slate-500 leading-tight">{TH.cash}</span>
+                            <span className="block font-semibold leading-tight">{fmtAmt(ev.totals.cash)}</span>
+                            <span className="block text-[9pt] text-slate-500 leading-tight mt-0.5">{TH.promptpay}</span>
+                            <span className="block font-semibold leading-tight">{fmtAmt(ev.totals.promptpay)}</span>
                           </td>
                         </tr>
                       </tfoot>
@@ -185,7 +236,7 @@ export default function ReportPage() {
 
             {/* ── 3. Product summary ── */}
             <GovSection no={3} title={TH.reportProductSummary}>
-              <table className="gov-table">
+              <table className="report-table">
                 <thead>
                   <tr>
                     <th className="w-12">{TH.sequence}</th>
@@ -225,9 +276,11 @@ export default function ReportPage() {
               </table>
 
               {report.sold_out_products.length > 0 && (
-                <>
-                  <h4 className="font-bold text-slate-900 mt-4 mb-1">{TH.reportSoldOut} (ไม่มีการจำหน่ายในช่วงนี้)</h4>
-                  <table className="gov-table">
+                <div className="avoid-break mt-4">
+                  <div className="text-[10pt] font-semibold text-slate-700 mb-1.5">
+                    {TH.reportSoldOut} <span className="text-[9pt] font-normal text-slate-500">(ไม่มีการจำหน่ายในช่วงนี้)</span>
+                  </div>
+                  <table className="report-table">
                     <thead>
                       <tr>
                         <th className="w-12">{TH.sequence}</th>
@@ -249,14 +302,14 @@ export default function ReportPage() {
                       ))}
                     </tbody>
                   </table>
-                </>
+                </div>
               )}
             </GovSection>
 
             {/* ── 4. PromptPay trace for the finance office ── */}
             <GovSection no={4} title={TH.reportPromptPayTrace} breakBefore>
-              <p className="text-[10pt] text-slate-700 mb-2">{TH.promptPayTraceNote}</p>
-              <table className="gov-table">
+              <p className="text-[9pt] text-slate-600 mb-2">{TH.promptPayTraceNote}</p>
+              <table className="report-table">
                 <thead>
                   <tr>
                     <th className="w-8">{TH.sequence}</th>
@@ -306,7 +359,7 @@ export default function ReportPage() {
             {/* ── 6. Reversed sales ── */}
             {report.reversed.length > 0 && (
               <GovSection no={5} title={TH.reportReversed}>
-                <table className="gov-table">
+                <table className="report-table">
                   <thead>
                     <tr>
                       <th className="w-8">{TH.sequence}</th>
@@ -334,21 +387,19 @@ export default function ReportPage() {
                     ))}
                   </tbody>
                 </table>
-                <p className="text-[10pt] text-slate-600 mt-1">
+                <p className="text-[9pt] text-slate-500 mt-1">
                   รายการข้างต้นถูกยกเลิกหรือคืนเงินแล้ว จึงไม่นับรวมในยอดจำหน่ายสุทธิ
                 </p>
               </GovSection>
             )}
 
             {/* Integrity statement */}
-            <div className="avoid-break mt-4 border border-slate-800 p-2 text-[10pt]">
+            <div className="avoid-break mt-5 pt-2 border-t-2 border-slate-800 text-[10pt]">
               <strong>การรับรองความถูกต้องของข้อมูล:</strong>{' '}
               {report.chain.verified
                 ? `ระบบได้ตรวจสอบความต่อเนื่องของรหัสตรวจสอบ (hash chain) ของรายการจำหน่ายทั้งสิ้น ${report.chain.checked} รายการ ผลการตรวจสอบถูกต้องครบถ้วน ไม่พบการแก้ไขย้อนหลัง`
                 : `พบความผิดปกติของรหัสตรวจสอบที่ใบเสร็จเลขที่ #${report.chain.broken_at} กรุณาตรวจสอบก่อนนำเสนอ`}
             </div>
-
-            <SignatureBlock />
           </>
         )}
       </PrintDoc>
@@ -356,11 +407,11 @@ export default function ReportPage() {
   );
 }
 
-function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <td className="px-2 py-1">
-      <span className="block text-[9pt] text-slate-500 leading-tight">{label}</span>
-      <span className={`text-[11pt] leading-tight ${strong ? 'font-bold' : 'font-semibold'}`}>{value}</span>
-    </td>
+    <div className="bg-white px-2 py-2 text-center">
+      <div className="text-[8.5pt] text-slate-500 leading-tight">{label}</div>
+      <div className="text-[11pt] font-bold text-slate-800 leading-tight mt-0.5">{value}</div>
+    </div>
   );
 }

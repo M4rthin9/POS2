@@ -72,6 +72,67 @@ body {
   background: #f8fafc;
 }
 
+/* ── Report body (redesigned) ──
+   The header stays the formal bordered block; everything below it now uses
+   light rule tables, soft panels and an emerald accent for money figures. */
+.gov-section h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+}
+.report-table th {
+  text-align: center;
+  font-weight: 600;
+  font-size: 9pt;
+  letter-spacing: 0.03em;
+  color: #475569;
+  padding: 4px 6px;
+  border-bottom: 1.5px solid #334155;
+  white-space: nowrap;
+}
+.report-table td {
+  padding: 3px 6px;
+  vertical-align: middle;
+  border-bottom: 1px solid #e2e8f0;
+}
+.report-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+.report-table tfoot td {
+  border-top: 1.5px solid #334155;
+  border-bottom: none;
+  background: #f1f5f9;
+}
+
+.summary-panel {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 12px 14px;
+  break-inside: avoid;
+}
+
+.event-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #f0fdf4;
+  border: 1px solid #d1fae5;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  break-inside: avoid;
+}
+
 @media print {
   /* Isolation: hide the whole app, then reveal only the report subtree. Same
      approach as the POS receipt (apps/pos/src/index.css) — more reliable than
@@ -180,6 +241,29 @@ body {
   #report-print th {
     background: #e2e8f0 !important;
     font-weight: 600;
+  }
+  /* Redesigned body: keep the light rule tables instead of the box grid. */
+  #report-print .report-table th,
+  #report-print .report-table td {
+    border: none;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  #report-print .report-table th {
+    border-bottom: 1.5px solid #334155;
+    background: #f8fafc !important;
+  }
+  #report-print .report-table tfoot td {
+    border-top: 1.5px solid #334155;
+    border-bottom: none;
+    background: #f1f5f9 !important;
+  }
+  #report-print .report-table tbody tr:nth-child(even) {
+    background: #f8fafc;
+  }
+  #report-print .event-strip,
+  #report-print .summary-panel {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   /* Scroll containers must lay flat on paper. */
