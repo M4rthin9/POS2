@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Sale } from '@cida/shared';
-import { fmt, fmtDate, TH, PAYMENT_LABELS } from '@cida/shared';
+import { fmt, fmtDate, TH, PAYMENT_LABELS, SALE_STATUS_LABELS } from '@cida/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../store/auth';
+import VoidBillModal from '../components/VoidBillModal';
+import type { VoidApproval } from '../components/VoidBillModal';
 
 export default function HistoryPage() {
   const navigate = useNavigate();
@@ -11,10 +13,15 @@ export default function HistoryPage() {
   const clearAuth = useAuth((s) => s.clear);
   const [sales, setSales] = useState<Sale[] | null>(null);
   const [search, setSearch] = useState('');
+  const [reloadTick, setReloadTick] = useState(0);
+  const [voidTarget, setVoidTarget] = useState<Sale | null>(null);
+  const [voidBusy, setVoidBusy] = useState(false);
+  const [voidError, setVoidError] = useState('');
+  const [voidNotice, setVoidNotice] = useState('');
 
   useEffect(() => {
     api.mySales().then(setSales).catch(() => setSales([]));
-  }, []);
+  }, [reloadTick]);
 
   const filtered = (sales ?? []).filter((s) => {
     if (!search) return true;
@@ -23,6 +30,23 @@ export default function HistoryPage() {
   });
 
   const total = (sales ?? []).reduce((a, s) => a + s.total, 0);
+
+  async function confirmVoid(input: VoidApproval) {
+    if (!voidTarget) return;
+    setVoidBusy(true);
+    setVoidError('');
+    try {
+      await api.voidSale(voidTarget.id, input);
+      setVoidTarget(null);
+      setVoidNotice(`${TH.voidSuccess} #${String(voidTarget.id).padStart(6, '0')}`);
+      setReloadTick((t) => t + 1);
+      setTimeout(() => setVoidNotice(''), 4000);
+    } catch (e) {
+      setVoidError(e instanceof Error ? e.message : TH.error);
+    } finally {
+      setVoidBusy(false);
+    }
+  }
 
   function logout() {
     api.logout().finally(() => {
@@ -62,6 +86,10 @@ export default function HistoryPage() {
           </div>
         </div>
 
+        {voidNotice && (
+          <div className="bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-xl px-4 py-2.5">{voidNotice}</div>
+        )}
+
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -85,10 +113,14 @@ export default function HistoryPage() {
                     #{String(s.id).padStart(6, '0')}
                     <span
                       className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                        s.payment_method === 'PromptPay' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'
+                        s.status === 'COMPLETED'
+                          ? s.payment_method === 'PromptPay'
+                            ? 'bg-emerald-50 text-emerald-600'
+                            : 'bg-slate-100 text-slate-600'
+                          : 'bg-red-50 text-red-600'
                       }`}
                     >
-                      {PAYMENT_LABELS[s.payment_method] ?? s.payment_method}
+                      {s.status !== 'COMPLETED' ? (SALE_STATUS_LABELS[s.status] ?? s.status) : (PAYMENT_LABELS[s.payment_method] ?? s.payment_method)}
                     </span>
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">
@@ -96,15 +128,40 @@ export default function HistoryPage() {
                     {s.discount > 0 && <> · {TH.discount} {fmt(s.discount)}</>}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-bold text-emerald-600">{fmt(s.total)}</div>
-                  <div className="text-xs text-slate-400">{s.items?.length ?? 0} รายการ</div>
+                <div className="text-right flex items-center gap-2">
+                  <div>
+                    <div className="font-bold text-emerald-600">{fmt(s.total)}</div>
+                    <div className="text-xs text-slate-400">{s.items?.length ?? 0} รายการ</div>
+                  </div>
+                  {s.status === 'COMPLETED' && (
+                    <button
+                      onClick={() => {
+                        setVoidError('');
+                        setVoidTarget(s);
+                      }}
+                      className="flex-none px-3 py-2 rounded-xl bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition"
+                    >
+                      {TH.voidBill}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {voidTarget && (
+        <VoidBillModal
+          sale={voidTarget}
+          busy={voidBusy}
+          error={voidError}
+          onClose={() => {
+            if (!voidBusy) setVoidTarget(null);
+          }}
+          onConfirm={confirmVoid}
+        />
+      )}
     </div>
   );
 }

@@ -106,6 +106,13 @@ export interface SaleCreateInput {
   payments?: { method: PaymentMethod; amount: number; ref?: string }[];
 }
 
+/** POS cashier-initiated void. Requires the approving superadmin's credentials. */
+export interface SaleVoidInput {
+  superadmin_username: string;
+  superadmin_pin: string;
+  reason?: string;
+}
+
 export interface PublicSettings {
   org_name: string;
   org_subtitle: string;

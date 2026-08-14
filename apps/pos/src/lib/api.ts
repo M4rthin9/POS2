@@ -1,7 +1,7 @@
 // ── Typed API client for the POS app ──
 
 import { apiFetch, parseApi, resolveApiBase, setApiBase, type ApiEnvelope } from '@cida/shared';
-import type { CidaEvent, Division, LoginResponse, Product, PublicSettings, Sale, SaleCreateInput, User } from '@cida/shared';
+import type { CidaEvent, Division, LoginResponse, Product, PublicSettings, Sale, SaleCreateInput, SaleVoidInput, User } from '@cida/shared';
 import { useAuth } from '../store/auth';
 
 export { resolveApiBase, setApiBase };
@@ -67,6 +67,9 @@ export const api = {
   createSale: (input: SaleCreateInput) => request<Sale>('/api/sales', { method: 'POST', body: JSON.stringify(input) }),
 
   mySales: () => request<Sale[]>('/api/sales'),
+
+  voidSale: (id: number, input: SaleVoidInput) =>
+    request<Sale>(`/api/sales/${id}/void`, { method: 'POST', body: JSON.stringify(input) }),
 
   updateSettings: (settings: PublicSettings) =>
     request<Record<string, string>>('/api/admin/settings', { method: 'PUT', body: JSON.stringify(settings) }),

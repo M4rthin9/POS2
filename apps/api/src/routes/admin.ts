@@ -662,12 +662,15 @@ admin.get('/sales', async (c) => {
 //
 // The non-destructive corrections. Both keep the sale row (and its ledger hash)
 // intact, restore stock, and leave an audit trail — unlike the hard delete below.
-async function reverseSale(
+// `actorId` is the user recorded as voided_by and as the audit actor; the POS
+// passes the approving superadmin while admin routes pass the signed-in user.
+export async function reverseSale(
   c: Parameters<typeof auditStatement>[0],
   id: number,
   nextStatus: 'VOID' | 'REFUNDED',
   reason: string,
   action: string,
+  actorId: number,
 ) {
   const sale = await c.env.DB.prepare('SELECT * FROM sales WHERE id = ?').bind(id).first();
   if (!sale) return notFound(c);
@@ -678,12 +681,11 @@ async function reverseSale(
     .bind(id)
     .all<{ product_id: number | null; qty: number }>();
 
-  const user = c.get('user');
   const stmts: D1PreparedStatement[] = [
     c.env.DB.prepare(
       `UPDATE sales SET status = ?, voided_at = datetime('now'), voided_by = ?, void_reason = ?
        WHERE id = ? AND status = 'COMPLETED'`,
-    ).bind(nextStatus, user.id, reason || null, id),
+    ).bind(nextStatus, actorId, reason || null, id),
   ];
   for (const item of items.results) {
     if (item.product_id !== null) {
@@ -696,14 +698,18 @@ async function reverseSale(
   // A reversed PromptPay sale is no longer expected to settle.
   stmts.push(c.env.DB.prepare('DELETE FROM reconciliation_records WHERE sale_id = ?').bind(id));
   stmts.push(
-    auditStatement(c, {
-      action,
-      entity: 'sales',
-      entity_id: id,
-      before: { status: sale.status, total: sale.total },
-      after: { status: nextStatus },
-      reason: reason || null,
-    }),
+    auditStatement(
+      c,
+      {
+        action,
+        entity: 'sales',
+        entity_id: id,
+        before: { status: sale.status, total: sale.total },
+        after: { status: nextStatus },
+        reason: reason || null,
+      },
+      actorId,
+    ),
   );
 
   await c.env.DB.batch(stmts);
@@ -715,14 +721,14 @@ admin.post('/sales/:id/void', async (c) => {
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return badRequest(c, 'เลขที่การขายไม่ถูกต้อง');
   const b = await c.req.json().catch(() => null);
-  return reverseSale(c, id, 'VOID', String(b?.reason || '').slice(0, 300), 'SALE_VOID');
+  return reverseSale(c, id, 'VOID', String(b?.reason || '').slice(0, 300), 'SALE_VOID', c.get('user').id);
 });
 
 admin.post('/sales/:id/refund', requireSuperAdmin, async (c) => {
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return badRequest(c, 'เลขที่การขายไม่ถูกต้อง');
   const b = await c.req.json().catch(() => null);
-  return reverseSale(c, id, 'REFUNDED', String(b?.reason || '').slice(0, 300), 'SALE_REFUND');
+  return reverseSale(c, id, 'REFUNDED', String(b?.reason || '').slice(0, 300), 'SALE_REFUND', c.get('user').id);
 });
 
 // ── Audit log ──

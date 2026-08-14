@@ -3,6 +3,9 @@ import type { Context } from 'hono';
 import { requireAuth } from '../middleware';
 import { ok, fail, badRequest, notFound } from '../lib/http';
 import { sealSale } from '../lib/ledger';
+import { isValidPin, verifyPin } from '../lib/password';
+import { LOGIN_LOCK_MINUTES, LOGIN_MAX_FAILURES } from '../env';
+import { reverseSale } from './admin';
 import type { PaymentMethod } from '@cida/shared';
 import type { Env, Variables } from '../env';
 
@@ -267,6 +270,66 @@ pos.post('/sales', async (c) => {
 
   const created = await saleDetail(c, saleId);
   return ok(c, created, 201);
+});
+
+// ── Void bill (cashier-initiated, superadmin-approved) ──
+//
+// The cashier requests a void from the POS. The bill is only reversed after the
+// requestor proves a superadmin username + PIN (the approving authority is
+// recorded as voided_by / audit actor). Failures share the same KV lockout keys
+// as /auth/login so a brute-force attempt also locks the real superadmin login.
+async function checkSuperadmin(c: Ctx, username: string, pin: string): Promise<{ id: number }> {
+  const raw = await c.env.CACHE.get(`login:${username}`);
+  let state: { count: number; locked_until: number } | null = null;
+  try {
+    state = raw ? (JSON.parse(raw) as { count: number; locked_until: number }) : null;
+  } catch {
+    state = null;
+  }
+  if (state && state.locked_until > Date.now()) {
+    const mins = Math.ceil((state.locked_until - Date.now()) / 60000);
+    throw { locked: true, mins };
+  }
+
+  const row = await c.env.DB.prepare(
+    'SELECT id, role, active, pin_hash, pin_salt FROM users WHERE username = ?',
+  )
+    .bind(username)
+    .first();
+
+  const valid = row && row.active === 1 && row.role === 'superadmin' && (await verifyPin(pin, row.pin_salt as string, row.pin_hash as string));
+  if (!valid) {
+    const count = (state?.count || 0) + 1;
+    if (count >= LOGIN_MAX_FAILURES) {
+      const locked_until = Date.now() + LOGIN_LOCK_MINUTES * 60 * 1000;
+      await c.env.CACHE.put(`login:${username}`, JSON.stringify({ count, locked_until }), { expirationTtl: LOGIN_LOCK_MINUTES * 60 });
+      throw { locked: true, mins: LOGIN_LOCK_MINUTES };
+    }
+    await c.env.CACHE.put(`login:${username}`, JSON.stringify({ count, locked_until: 0 }), { expirationTtl: 15 * 60 });
+    throw { locked: false, remaining: LOGIN_MAX_FAILURES - count };
+  }
+
+  await c.env.CACHE.delete(`login:${username}`);
+  return { id: row.id as number };
+}
+
+pos.post('/sales/:id/void', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return badRequest(c, 'เลขที่การขายไม่ถูกต้อง');
+  const b = await c.req.json().catch(() => null);
+  const username = String(b?.superadmin_username || '').trim();
+  const pin = String(b?.superadmin_pin || '');
+  const reason = String(b?.reason || '').slice(0, 300);
+  if (!username || !isValidPin(pin)) return badRequest(c, 'กรุณากรอกชื่อผู้ใช้และ PIN ของผู้ดูแลระบบ');
+
+  try {
+    const approver = await checkSuperadmin(c, username, pin);
+    return await reverseSale(c, id, 'VOID', reason, 'SALE_VOID', approver.id);
+  } catch (e) {
+    const x = e as { locked: boolean; mins?: number; remaining?: number };
+    if (x.locked) return fail(c, `ผู้ดูแลระบบถูกล็อกชั่วคราว โปรดรอ ${x.mins} นาที`, 429, 'LOCKED');
+    return fail(c, `ชื่อผู้ใช้หรือ PIN ผู้ดูแลระบบไม่ถูกต้อง (เหลือ ${x.remaining} ครั้ง)`, 401, 'BAD_SUPERADMIN');
+  }
 });
 
 export default pos;
