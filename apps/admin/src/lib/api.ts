@@ -1,5 +1,18 @@
 import { apiFetch, parseApi, type ApiEnvelope } from '@cida/shared';
-import type { CidaEvent, Division, LoginResponse, Overview, Product, Sale, Stats } from '@cida/shared';
+import type {
+  AuditLog,
+  CidaEvent,
+  DashboardPayload,
+  Division,
+  JournalResponse,
+  LoginResponse,
+  Overview,
+  Product,
+  Sale,
+  SalesReport,
+  Stats,
+  ZReport,
+} from '@cida/shared';
 import { useAuth } from '../store/auth';
 
 export interface AdminProduct extends Product {
@@ -27,6 +40,30 @@ export interface ProductInput {
   image_url?: string | null;
   stock?: number | null;
   active?: boolean;
+}
+
+export interface DateScope {
+  from?: string;
+  to?: string;
+  event_id?: number;
+}
+
+export interface ChainVerification {
+  verified: boolean;
+  checked: number;
+  broken_at: number | null;
+  unsealed: number;
+}
+
+/** Serialises a query object, skipping empty values. */
+function qs(params?: object): string {
+  if (!params) return '';
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
+  }
+  const s = p.toString();
+  return s ? `?${s}` : '';
 }
 
 async function request<T>(path: string, init?: RequestInit, retry = true): Promise<T> {
@@ -104,6 +141,7 @@ export const api = {
     request<AdminEvent>(`/api/admin/events/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
   deleteEvent: (id: number) => request<{ deleted: number }>(`/api/admin/events/${id}`, { method: 'DELETE' }),
   activateEvent: (id: number) => request<AdminEvent>(`/api/admin/events/${id}/activate`, { method: 'POST' }),
+  closeEvent: (id: number) => request<AdminEvent>(`/api/admin/events/${id}/close`, { method: 'POST' }),
   eventProductIds: (id: number) => request<number[]>(`/api/admin/events/${id}/products`),
   setEventProducts: (id: number, productIds: number[]) =>
     request<{ count: number }>(`/api/admin/events/${id}/products`, { method: 'PUT', body: JSON.stringify({ product_ids: productIds }) }),
@@ -127,17 +165,36 @@ export const api = {
   updateAdminSettings: (settings: Record<string, string>) =>
     request<Record<string, string>>('/api/admin/settings', { method: 'PUT', body: JSON.stringify(settings) }),
 
-  adminSales: (q?: { event_id?: number; cashier_id?: number; from?: string; to?: string }) => {
-    const p = new URLSearchParams();
-    if (q?.event_id) p.set('event_id', String(q.event_id));
-    if (q?.cashier_id) p.set('cashier_id', String(q.cashier_id));
-    if (q?.from) p.set('from', q.from);
-    if (q?.to) p.set('to', q.to);
-    const qs = p.toString();
-    return request<Sale[]>(`/api/admin/sales${qs ? `?${qs}` : ''}`);
-  },
+  adminSales: (q?: { event_id?: number; cashier_id?: number; from?: string; to?: string; status?: string }) =>
+    request<Sale[]>(`/api/admin/sales${qs(q)}`),
 
+  sale: (id: number) => request<Sale>(`/api/sales/${id}`),
   deleteSale: (id: number) => request<{ deleted: number }>(`/api/admin/sales/${id}`, { method: 'DELETE' }),
   bulkDeleteSales: (ids: number[]) =>
     request<{ deleted: number }>('/api/admin/sales/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
+
+  // ── Operations dashboard ──
+  dashboard: (q?: DateScope) => request<DashboardPayload>(`/api/admin/dashboard${qs(q)}`),
+
+  // ── Ledger / statement ──
+  journal: (q?: DateScope & { cashier_id?: number }) => request<JournalResponse>(`/api/admin/journal${qs(q)}`),
+  verifyLedger: () => request<ChainVerification>('/api/admin/ledger/verify'),
+  rehashLedger: () => request<{ sealed: number; remaining: number }>('/api/admin/ledger/rehash', { method: 'POST' }),
+
+  // ── Void / refund / audit ──
+  voidSale: (id: number, reason: string) =>
+    request<Sale>(`/api/admin/sales/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  refundSale: (id: number, reason: string) =>
+    request<Sale>(`/api/admin/sales/${id}/refund`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  audit: (q?: { from?: string; to?: string; entity?: string; actor?: number; limit?: number }) =>
+    request<AuditLog[]>(`/api/admin/audit${qs(q)}`),
+
+  // ── X / Z report ──
+  zreport: (q?: { date?: string; event_id?: number; cashier_id?: number }) => request<ZReport>(`/api/admin/zreport${qs(q)}`),
+  closeZReport: (input: { business_date: string; event_id?: number | null; cashier_user_id?: number | null; cash_counted: number | null }) =>
+    request<ZReport>('/api/admin/zreport/close', { method: 'POST', body: JSON.stringify(input) }),
+  zreportHistory: () => request<ZReport[]>('/api/admin/zreport/history'),
+
+  // ── Formal sales report ──
+  salesReport: (q?: DateScope) => request<SalesReport>(`/api/admin/report${qs(q)}`),
 };

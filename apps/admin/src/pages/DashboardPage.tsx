@@ -1,496 +1,382 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Overview, Sale, Stats } from '@cida/shared';
-import { fmt, fmtDate, fmtDateOnly, PAYMENT_LABELS, TH, toISODate } from '@cida/shared';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import type { DashboardPayload, Sale } from '@cida/shared';
+import { AUDIT_ACTION_LABELS, EVENT_STATUS_LABELS, PAYMENT_LABELS, SALE_STATUS_LABELS, TH, fmt } from '@cida/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../store/auth';
+import { periodLabel, periodRange } from '../lib/period';
+import PeriodPicker, { type PeriodState } from '../components/PeriodPicker';
+import { Badge, Button, Card, EmptyRow, ErrorBar, MiniBarChart, Modal, ShareBar, StatTile, Table } from '../components/ui';
+import SaleDetail from '../components/SaleDetail';
 
-type Period = 'today' | '7d' | '30d' | 'all' | 'custom';
+const REFRESH_MS = 30_000;
 
-function addDays(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-}
+const STATUS_TONE: Record<string, string> = { COMPLETED: 'emerald', VOID: 'slate', REFUNDED: 'amber' };
+const EVENT_TONE: Record<string, string> = { ACTIVE: 'emerald', UPCOMING: 'sky', CLOSED: 'slate' };
 
-const PRESETS: { id: Period; label: string }[] = [
-  { id: 'today', label: 'วันนี้' },
-  { id: '7d', label: '7 วัน' },
-  { id: '30d', label: '30 วัน' },
-  { id: 'all', label: 'ทั้งหมด' },
-];
-
-function periodRange(period: Period, customFrom: string, customTo: string): { from?: string; to?: string } {
-  if (period === 'custom') return { from: customFrom || undefined, to: customTo || undefined };
-  const today = new Date();
-  if (period === 'today') return { from: toISODate(today), to: toISODate(today) };
-  if (period === '7d') return { from: toISODate(addDays(today, -6)), to: toISODate(today) };
-  if (period === '30d') return { from: toISODate(addDays(today, -29)), to: toISODate(today) };
-  return {};
-}
-
-function periodLabel(period: Period, customFrom: string, customTo: string): string {
-  if (period === 'all') return 'ทุกช่วงเวลา';
-  if (period === 'custom') {
-    if (customFrom && customTo) return `${fmtDateOnly(customFrom)} – ${fmtDateOnly(customTo)}`;
-    return customFrom || customTo || 'ช่วงเวลา';
-  }
-  const r = periodRange(period, '', '');
-  if (period === 'today') return fmtDateOnly(r.from!);
-  return `${fmtDateOnly(r.from!)} – ${fmtDateOnly(r.to!)}`;
+function relative(iso: string | null): string {
+  if (!iso) return '—';
+  const t = Date.parse(iso.endsWith('Z') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (!Number.isFinite(t)) return '—';
+  const mins = Math.round((Date.now() - t) / 60000);
+  if (mins < 1) return 'เมื่อครู่';
+  if (mins < 60) return `${mins} นาทีที่แล้ว`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} ชม.ที่แล้ว`;
+  return `${Math.round(hrs / 24)} วันที่แล้ว`;
 }
 
 export default function DashboardPage() {
   const user = useAuth((s) => s.user);
   const isSuper = user?.role === 'superadmin';
 
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [settings, setSettings] = useState<Record<string, string>>({});
-  const [events, setEvents] = useState<{ id: number; name: string }[]>([]);
-  const [sales, setSales] = useState<Sale[] | null>(null);
-
-  const [period, setPeriod] = useState<Period>('30d');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const [range, setRange] = useState<PeriodState>({ period: 'today', from: '', to: '' });
   const [eventFilter, setEventFilter] = useState('');
-  const [search, setSearch] = useState('');
-
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [confirm, setConfirm] = useState<{ mode: 'single'; sale: Sale } | { mode: 'bulk' } | null>(null);
+  const [data, setData] = useState<DashboardPayload | null>(null);
   const [detail, setDetail] = useState<Sale | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [live, setLive] = useState(true);
+  const [tick, setTick] = useState(0);
+  const firstLoad = useRef(true);
 
   const load = useCallback(async () => {
-    setError('');
-    const { from, to } = periodRange(period, customFrom, customTo);
+    const { from, to } = periodRange(range.period, range.from, range.to);
     try {
-      const [ov, st, evs] = await Promise.all([
-        api.overview(),
-        api.stats({ from, to }),
-        api.adminEvents().catch(() => []),
-      ]);
-      setOverview(ov);
-      setStats(st);
-      setEvents(evs);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : TH.error);
-    }
-  }, [period, customFrom, customTo]);
-
-  const loadSales = useCallback(async () => {
-    const { from, to } = periodRange(period, customFrom, customTo);
-    setSales(null);
-    try {
-      const res = await api.adminSales({
-        from,
-        to,
-        event_id: eventFilter ? Number(eventFilter) : undefined,
-      });
-      setSales(res);
-    } catch {
-      setSales([]);
-    }
-  }, [period, customFrom, customTo, eventFilter]);
-
-  useEffect(() => {
-    api.adminSettings().then(setSettings).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    loadSales();
-  }, [loadSales]);
-
-  const filtered = useMemo(() => {
-    if (!search) return sales ?? [];
-    const q = search.toLowerCase();
-    return (sales ?? []).filter(
-      (s) => String(s.id).includes(q) || (s.cashier_name ?? '').toLowerCase().includes(q) || (s.event_name ?? '').toLowerCase().includes(q),
-    );
-  }, [sales, search]);
-
-  const selectedSales = useMemo(() => (sales ?? []).filter((s) => selected.has(s.id)), [sales, selected]);
-  const selectedTotal = selectedSales.reduce((a, s) => a + s.total, 0);
-
-  const allChecked = sales !== null && sales.length > 0 && filtered.length === selected.size && filtered.every((s) => selected.has(s.id));
-
-  function toggleAll() {
-    if (allChecked) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(filtered.map((s) => s.id)));
-    }
-  }
-
-  function toggleOne(id: number) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function confirmDelete() {
-    if (!confirm) return;
-    setBusy(true);
-    setError('');
-    try {
-      if (confirm.mode === 'single') {
-        await api.deleteSale(confirm.sale.id);
-        setConfirm(null);
-      } else {
-        const ids = [...selected];
-        await api.bulkDeleteSales(ids);
-        setSelected(new Set());
-        setConfirm(null);
-      }
-      await Promise.all([load(), loadSales()]);
+      const payload = await api.dashboard({ from, to, event_id: eventFilter ? Number(eventFilter) : undefined });
+      setData(payload);
+      setError('');
     } catch (e) {
       setError(e instanceof Error ? e.message : TH.error);
     } finally {
-      setBusy(false);
+      firstLoad.current = false;
     }
-  }
+  }, [range, eventFilter]);
 
-  const cards = [
-    { label: 'รายได้ (ช่วง)', value: stats ? fmt(stats.total_revenue) : '…', accent: 'text-emerald-600' },
-    { label: 'ยอดขาย (ช่วง)', value: stats ? String(stats.total_sales) : '…', accent: 'text-slate-800' },
-    { label: TH.todayRevenue, value: overview ? fmt(overview.today_revenue) : '…', accent: 'text-emerald-600' },
-    { label: TH.todaySales, value: overview ? String(overview.today_sales) : '…', accent: 'text-slate-800' },
-    { label: TH.products, value: overview ? String(overview.total_products) : '…', accent: 'text-slate-800' },
-    { label: TH.users, value: overview ? String(overview.total_users) : '…', accent: 'text-slate-800' },
+  useEffect(() => {
+    load();
+  }, [load, tick]);
+
+  useEffect(() => {
+    if (!live) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [live]);
+
+  const kpi = data?.kpi;
+  const label = periodLabel(range.period, range.from, range.to);
+  const activeEvent = useMemo(() => data?.events.find((e) => e.status === 'ACTIVE') ?? null, [data]);
+
+  const tiles = [
+    { label: TH.grossSales, value: kpi ? fmt(kpi.gross) : '…', tone: 'slate' as const, icon: '💰' },
+    { label: TH.netRevenue, value: kpi ? fmt(kpi.net) : '…', sub: kpi ? `${TH.totalDiscount} ${fmt(kpi.discount)}` : undefined, tone: 'emerald' as const, icon: '📈' },
+    { label: TH.cashOnHand, value: kpi ? fmt(kpi.cash_total) : '…', sub: data?.zreport.closed ? TH.dayClosed : TH.dayOpen, tone: 'amber' as const, icon: '💵' },
+    {
+      label: TH.ordersCompleted,
+      value: kpi ? String(kpi.orders_completed) : '…',
+      sub: kpi ? `${TH.ordersVoid} ${kpi.orders_void} · ${TH.ordersRefunded} ${kpi.orders_refunded}` : undefined,
+      tone: 'sky' as const,
+      icon: '🧾',
+    },
+    { label: TH.avgBasket, value: kpi ? fmt(kpi.avg_basket) : '…', tone: 'violet' as const, icon: '🛒' },
+    {
+      label: TH.lowStockAlerts,
+      value: kpi ? String(kpi.low_stock_count) : '…',
+      tone: (kpi && kpi.low_stock_count > 0 ? 'rose' : 'slate') as 'rose' | 'slate',
+      icon: '📦',
+    },
   ];
-
-  const daily = stats?.daily ?? {};
-  const days = Object.keys(daily).sort();
-  const maxDay = Math.max(1, ...Object.values(daily));
-
-  const logo = settings.logo_url || '/icon-192.svg';
 
   return (
     <div>
       {/* Toolbar */}
       <div className="no-print mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">{TH.dashboard}</h1>
+          <h1 className="text-xl font-bold text-slate-800">{TH.operationsDashboard}</h1>
           <p className="text-sm text-slate-500">
-            {overview?.active_event ? `🎪 ${TH.activeEvent}: ${overview.active_event}` : 'ไม่มีกิจกรรมที่เปิดขาย'}
+            {activeEvent ? `🎪 ${TH.activeEvent}: ${activeEvent.name}` : TH.noActiveEvent} · {label}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 bg-white rounded-xl border border-slate-200 p-1">
-            {PRESETS.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setPeriod(p.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${period === p.id ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setPeriod('custom')}
-            className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition ${period === 'custom' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+        <PeriodPicker value={range} onChange={setRange}>
+          <select
+            value={eventFilter}
+            onChange={(e) => setEventFilter(e.target.value)}
+            className="border border-slate-200 rounded-xl px-2 py-1.5 text-sm bg-white"
           >
-            กำหนดเอง
-          </button>
-          {period === 'custom' && (
-            <>
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="border border-slate-200 rounded-xl px-2 py-1.5 text-sm" />
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="border border-slate-200 rounded-xl px-2 py-1.5 text-sm" />
-            </>
-          )}
-          <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-500 transition shadow-sm">
-            🖨 {TH.print}
-          </button>
-        </div>
+            <option value="">— {TH.event} —</option>
+            {(data?.events ?? []).map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1.5 text-xs text-slate-500 px-2">
+            <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} className="w-3.5 h-3.5 accent-emerald-600" />
+            {TH.autoRefresh}
+          </label>
+          <Button onClick={() => setTick((t) => t + 1)}>↻ {TH.refresh}</Button>
+        </PeriodPicker>
       </div>
 
-      {error && (
-        <div className="no-print mb-3 text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2.5 flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError('')} className="font-bold px-2">
-            ✕
-          </button>
-        </div>
-      )}
+      <ErrorBar message={error} onDismiss={() => setError('')} />
 
-      <div id="report-print" className="space-y-4">
-        {/* Report header */}
-        <div className="bg-white rounded-2xl shadow-sm p-5 text-center">
-          {logo && <img src={logo} alt="" className="h-16 w-16 object-contain mx-auto mb-2 rounded-xl" />}
-          <h2 className="text-lg font-bold text-slate-800">{settings.org_name || 'CIDA'}</h2>
-          {settings.org_subtitle && <p className="text-sm text-slate-500">{settings.org_subtitle}</p>}
-          {settings.org_address && <p className="text-sm text-slate-500">{settings.org_address}</p>}
-          <div className="mt-2 inline-block bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-full px-4 py-1">
-            รายงานการขาย · {periodLabel(period, customFrom, customTo)}
-          </div>
-        </div>
+      {/* Hero KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 mb-3">
+        {tiles.map((t) => (
+          <StatTile key={t.label} {...t} />
+        ))}
+      </div>
 
-        {/* KPI cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-          {cards.map((c) => (
-            <div key={c.label} className="bg-white rounded-2xl shadow-sm p-4">
-              <div className="text-xs text-slate-500">{c.label}</div>
-              <div className={`text-xl font-bold mt-1 ${c.accent}`}>{c.value}</div>
-            </div>
-          ))}
-        </div>
+      {/* Quick actions */}
+      <div className="no-print mb-3 flex flex-wrap gap-2">
+        <a
+          href={import.meta.env.VITE_POS_URL || 'http://localhost:5173'}
+          target="_blank"
+          rel="noreferrer"
+          className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 shadow-sm transition"
+        >
+          🛒 {TH.openPos}
+        </a>
+        <Link to="/zreport" className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 shadow-sm transition">
+          📋 {TH.xReport} / {TH.zReport}
+        </Link>
+        <Link to="/report" className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition">
+          🧾 {TH.salesReport}
+        </Link>
+        <Link to="/sales" className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition">
+          🔎 {TH.voidSale}
+        </Link>
+        <Link to="/audit" className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition">
+          🗒 {TH.auditLog}
+        </Link>
+      </div>
 
-        {/* Sales table */}
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-semibold text-slate-800">🧾 การขายในรอบ</h3>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={`${TH.search} (#, ${TH.cashier})`}
-                className="no-print border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-              <select
-                value={eventFilter}
-                onChange={(e) => setEventFilter(e.target.value)}
-                className="no-print border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
-              >
-                <option value="">— {TH.event} —</option>
-                {events.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {isSuper && selected.size > 0 && (
-            <div className="no-print flex items-center justify-between bg-rose-50 px-4 py-2.5 border-b border-rose-100">
-              <span className="text-sm text-rose-700 font-semibold">เลือกแล้ว {selected.size} รายการ · {fmt(selectedTotal)}</span>
-              <button onClick={() => setConfirm({ mode: 'bulk' })} disabled={busy} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-500 disabled:opacity-40 transition">
-                🗑 ลบที่เลือก
-              </button>
-            </div>
-          )}
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500">
+      {/* 4-column operations grid: sales+ops span 2, then finance, then inventory */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-4 gap-3 items-start">
+        {/* ── Columns 1-2: sales & operations ── */}
+        <div className="2xl:col-span-2 space-y-3">
+          <Card title={`🧾 ${TH.liveSales}`} dense>
+            <Table
+              head={
                 <tr>
-                  {isSuper && (
-                    <th className="no-print px-3 py-2">
-                      <input type="checkbox" checked={allChecked} onChange={toggleAll} className="w-4 h-4 accent-emerald-600" />
-                    </th>
-                  )}
-                  <th className="px-4 py-2 text-left font-medium">#</th>
-                  <th className="px-4 py-2 text-left font-medium">{TH.date}</th>
-                  <th className="px-4 py-2 text-left font-medium">{TH.event}</th>
-                  <th className="px-4 py-2 text-left font-medium">{TH.cashier}</th>
-                  <th className="px-4 py-2 text-left font-medium">{TH.paymentMethod}</th>
-                  <th className="px-4 py-2 text-right font-medium">{TH.subtotal}</th>
-                  <th className="px-4 py-2 text-right font-medium">{TH.discount}</th>
-                  <th className="px-4 py-2 text-right font-medium">{TH.total}</th>
-                  {isSuper && <th className="no-print px-3 py-2" />}
+                  <th className="px-3 py-2 text-left font-medium">#</th>
+                  <th className="px-3 py-2 text-left font-medium">{TH.date}</th>
+                  <th className="px-3 py-2 text-left font-medium">{TH.cashier}</th>
+                  <th className="px-3 py-2 text-left font-medium">{TH.paymentMethod}</th>
+                  <th className="px-3 py-2 text-left font-medium">{TH.status}</th>
+                  <th className="px-3 py-2 text-right font-medium">{TH.total}</th>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {sales === null ? (
-                  <tr>
-                    <td colSpan={isSuper ? 10 : 9} className="px-4 py-8 text-center text-slate-400">…</td>
+              }
+            >
+              {!data ? (
+                <EmptyRow colSpan={6} label="…" />
+              ) : data.recent_sales.length === 0 ? (
+                <EmptyRow colSpan={6} />
+              ) : (
+                data.recent_sales.map((s) => (
+                  <tr key={s.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setDetail(s)}>
+                    <td className="px-3 py-1.5 font-mono text-xs">#{String(s.id).padStart(6, '0')}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap text-xs">{relative(s.created_at)}</td>
+                    <td className="px-3 py-1.5 truncate max-w-32">{s.cashier_name}</td>
+                    <td className="px-3 py-1.5">
+                      <Badge tone={s.payment_method === 'PromptPay' ? 'emerald' : 'slate'}>
+                        {PAYMENT_LABELS[s.payment_method] ?? s.payment_method}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <Badge tone={STATUS_TONE[s.status]}>{SALE_STATUS_LABELS[s.status] ?? s.status}</Badge>
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-semibold tabular-nums ${s.status === 'COMPLETED' ? '' : 'line-through text-slate-400'}`}>
+                      {fmt(s.total)}
+                    </td>
                   </tr>
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={isSuper ? 10 : 9} className="px-4 py-8 text-center text-slate-400">{TH.noData}</td>
-                  </tr>
-                ) : (
-                  filtered.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setDetail(s)}>
-                      {isSuper && (
-                        <td className="no-print px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleOne(s.id)} className="w-4 h-4 accent-emerald-600" />
-                        </td>
-                      )}
-                      <td className="px-4 py-2 font-mono text-xs">#{String(s.id).padStart(6, '0')}</td>
-                      <td className="px-4 py-2 whitespace-nowrap">{fmtDate(s.created_at)}</td>
-                      <td className="px-4 py-2 max-w-40 truncate">{s.event_name}</td>
-                      <td className="px-4 py-2">{s.cashier_name}</td>
-                      <td className="px-4 py-2">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${s.payment_method === 'PromptPay' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}>
-                          {PAYMENT_LABELS[s.payment_method] ?? s.payment_method}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-right">{fmt(s.subtotal)}</td>
-                      <td className="px-4 py-2 text-right">{s.discount > 0 ? fmt(s.discount) : '—'}</td>
-                      <td className="px-4 py-2 text-right font-semibold">{fmt(s.total)}</td>
-                      {isSuper && (
-                        <td className="no-print px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => setConfirm({ mode: 'single', sale: s })}
-                            className="text-red-500 hover:text-red-700 text-xs font-semibold"
-                            title={TH.delete}
-                          >
-                            🗑
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                ))
+              )}
+            </Table>
+          </Card>
+
+          <div className="grid md:grid-cols-2 gap-3">
+            <Card title={`🎪 ${TH.eventStatus}`} dense bodyClassName="p-3 space-y-2 max-h-72 overflow-y-auto">
+              {(data?.events ?? []).length === 0 ? (
+                <p className="text-sm text-slate-400">{TH.noData}</p>
+              ) : (
+                (data?.events ?? []).map((e) => (
+                  <div key={e.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-800 truncate">{e.name}</div>
+                      <div className="text-[11px] text-slate-400">
+                        {e.code} · {TH.lastSale} {relative(e.last_sale_at)}
+                      </div>
+                    </div>
+                    <div className="text-right flex-none">
+                      <Badge tone={EVENT_TONE[e.status]}>{EVENT_STATUS_LABELS[e.status] ?? e.status}</Badge>
+                      <div className="text-xs font-semibold text-slate-700 mt-1 tabular-nums">{fmt(e.today_revenue)}</div>
+                      <div className="text-[10px] text-slate-400">{e.today_sales} {TH.records}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </Card>
+
+            <Card title={`👥 ${TH.cashierActivity}`} dense bodyClassName="p-3 space-y-2 max-h-72 overflow-y-auto">
+              {(data?.cashiers ?? []).length === 0 ? (
+                <p className="text-sm text-slate-400">{TH.noData}</p>
+              ) : (
+                (data?.cashiers ?? []).map((u) => (
+                  <div key={u.user_id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-800 truncate">{u.display_name}</div>
+                      <div className="text-[11px] text-slate-400">
+                        {u.sale_count} {TH.records} · {relative(u.last_sale_at)}
+                      </div>
+                    </div>
+                    <div className="text-right flex-none">
+                      <div className="text-sm font-semibold text-emerald-600 tabular-nums">{fmt(u.revenue)}</div>
+                      <div className="text-[10px] text-slate-400 tabular-nums">
+                        {TH.cash} {fmt(u.cash)} · {TH.promptpay} {fmt(u.promptpay)}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </Card>
           </div>
+
+          <Card title={`📊 ${TH.dailyChart}`} dense>
+            <MiniBarChart data={data?.daily ?? {}} format={fmt} />
+          </Card>
         </div>
 
-        {/* Breakdowns */}
-        {stats && (
-          <div className="grid lg:grid-cols-3 gap-3">
-            <div className="bg-white rounded-2xl shadow-sm p-4">
-              <h3 className="font-semibold text-slate-800 mb-3">{TH.paymentBreakdown}</h3>
-              {Object.keys(stats.payment_breakdown).length === 0 ? (
-                <p className="text-sm text-slate-400">{TH.noData}</p>
-              ) : (
-                <ul className="space-y-2">
-                  {Object.entries(stats.payment_breakdown).map(([k, v]) => (
-                    <li key={k} className="flex justify-between text-sm">
-                      <span className="text-slate-600">{PAYMENT_LABELS[k] || k}</span>
-                      <span className="font-semibold">{fmt(v)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm p-4">
-              <h3 className="font-semibold text-slate-800 mb-3">{TH.divisionBreakdown}</h3>
-              {Object.keys(stats.division_breakdown).length === 0 ? (
-                <p className="text-sm text-slate-400">{TH.noData}</p>
-              ) : (
-                <ul className="space-y-2">
-                  {Object.entries(stats.division_breakdown).map(([k, v]) => (
-                    <li key={k} className="flex justify-between text-sm">
-                      <span className="text-slate-600">{k}</span>
-                      <span className="font-semibold">{fmt(v)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm p-4">
-              <h3 className="font-semibold text-slate-800 mb-3">{TH.productBreakdown}</h3>
-              {Object.keys(stats.product_breakdown).length === 0 ? (
-                <p className="text-sm text-slate-400">{TH.noData}</p>
-              ) : (
-                <ul className="space-y-2 max-h-64 overflow-y-auto">
-                  {Object.entries(stats.product_breakdown).map(([k, v]) => (
-                    <li key={k} className="flex justify-between text-sm">
-                      <span className="text-slate-600 truncate pr-2">{k}</span>
-                      <span className="font-semibold whitespace-nowrap">
-                        {v.qty}× {fmt(v.revenue)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Daily chart */}
-        {days.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-4">
-            <h3 className="font-semibold text-slate-800 mb-3">{TH.dailyChart}</h3>
-            <div className="flex items-end gap-2 h-40 overflow-x-auto">
-              {days.map((d) => (
-                <div key={d} className="flex flex-col items-center flex-none">
-                  <div className="text-[10px] text-slate-500">{fmt(daily[d])}</div>
-                  <div className="w-10 bg-emerald-500 rounded-t" style={{ height: `${Math.round((daily[d] / maxDay) * 100)}px`, minHeight: 4 }} />
-                  <div className="text-[10px] text-slate-500 mt-1">{d.slice(5)}</div>
-                </div>
+        {/* ── Column 3: daily financial summary ── */}
+        <div className="space-y-3">
+          <Card title={`💳 ${TH.financialSummary}`} dense bodyClassName="p-4 space-y-3">
+            <ShareBar
+              parts={[
+                { label: TH.cash, value: kpi?.cash_total ?? 0, color: 'bg-slate-400' },
+                { label: TH.promptpay, value: kpi?.promptpay_total ?? 0, color: 'bg-emerald-500' },
+              ]}
+            />
+            <ul className="space-y-1.5">
+              {Object.entries(data?.payment_breakdown ?? {}).map(([k, v]) => (
+                <li key={k} className="flex justify-between text-sm">
+                  <span className="text-slate-600">{PAYMENT_LABELS[k] || k}</span>
+                  <span className="font-semibold tabular-nums">{fmt(v)}</span>
+                </li>
               ))}
+              {Object.keys(data?.payment_breakdown ?? {}).length === 0 && <li className="text-sm text-slate-400">{TH.noData}</li>}
+            </ul>
+
+            <div className="border-t border-dashed border-slate-200 pt-3 space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">{TH.cashExpected}</span>
+                <span className="font-semibold tabular-nums">{fmt(data?.zreport.cash_expected ?? 0)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">{TH.cashCounted}</span>
+                <span className="font-semibold tabular-nums">
+                  {data?.zreport.cash_counted === null || data?.zreport.cash_counted === undefined ? '—' : fmt(data.zreport.cash_counted)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">{TH.cashVariance}</span>
+                <span className={`font-bold tabular-nums ${!data?.zreport.variance ? 'text-slate-500' : 'text-rose-600'}`}>
+                  {data?.zreport.variance === null || data?.zreport.variance === undefined ? '—' : fmt(data.zreport.variance)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center pt-1">
+                <Badge tone={data?.zreport.closed ? 'emerald' : 'amber'}>{data?.zreport.closed ? TH.dayClosed : TH.dayOpen}</Badge>
+                <Link to="/zreport" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+                  {TH.closeDay} →
+                </Link>
+              </div>
             </div>
-          </div>
-        )}
+          </Card>
+
+          <Card title={`🏦 ${TH.promptpay}`} dense bodyClassName="p-4 space-y-1.5">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-600">{TH.amount}</span>
+              <span className="font-semibold tabular-nums text-emerald-600">{fmt(data?.promptpay_trace.amount ?? 0)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-600">{TH.billCount}</span>
+              <span className="font-semibold tabular-nums">{data?.promptpay_trace.count ?? 0}</span>
+            </div>
+            <p className="text-[10px] text-slate-400 pt-1">{TH.promptPayTraceNote}</p>
+            <Link to="/report" className="no-print block text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+              {TH.reportPromptPayTrace} →
+            </Link>
+          </Card>
+
+          <Card title={`🗂️ ${TH.divisionBreakdown}`} dense bodyClassName="p-4 max-h-56 overflow-y-auto">
+            <ul className="space-y-1.5">
+              {Object.entries(data?.division_breakdown ?? {}).map(([k, v]) => (
+                <li key={k} className="flex justify-between text-sm">
+                  <span className="text-slate-600 truncate pr-2">{k}</span>
+                  <span className="font-semibold tabular-nums whitespace-nowrap">{fmt(v)}</span>
+                </li>
+              ))}
+              {Object.keys(data?.division_breakdown ?? {}).length === 0 && <li className="text-sm text-slate-400">{TH.noData}</li>}
+            </ul>
+          </Card>
+        </div>
+
+        {/* ── Column 4: inventory & operational alerts ── */}
+        <div className="space-y-3">
+          <Card title={`📦 ${TH.inventoryAlerts}`} dense bodyClassName="p-3 space-y-2 max-h-96 overflow-y-auto">
+            {(data?.low_stock ?? []).length === 0 ? (
+              <p className="text-sm text-slate-400">{TH.noData}</p>
+            ) : (
+              (data?.low_stock ?? []).map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-800 truncate">{p.name}</div>
+                    <div className="text-[11px] text-slate-400">
+                      {p.sku} · {p.division_name ?? '—'}
+                    </div>
+                  </div>
+                  <div className="text-right flex-none">
+                    <Badge tone={p.stock === 0 ? 'rose' : 'amber'}>
+                      {p.stock === 0 ? TH.outOfStock : `${TH.remaining} ${p.stock}`}
+                    </Badge>
+                    <div className="text-[10px] text-slate-400 mt-1">
+                      {TH.soldToday} {p.sold_today}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </Card>
+
+          <Card
+            title={`🗒 ${TH.auditLog}`}
+            dense
+            bodyClassName="p-3 space-y-2 max-h-80 overflow-y-auto"
+            action={
+              <Link to="/audit" className="no-print text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+                →
+              </Link>
+            }
+          >
+            {(data?.audit_tail ?? []).length === 0 ? (
+              <p className="text-sm text-slate-400">{TH.noData}</p>
+            ) : (
+              (data?.audit_tail ?? []).map((a) => (
+                <div key={a.id} className="text-xs border-l-2 border-slate-200 pl-2 py-0.5">
+                  <div className="font-medium text-slate-700">{AUDIT_ACTION_LABELS[a.action] ?? a.action}</div>
+                  <div className="text-slate-400">
+                    {a.actor_name ?? '—'} · {a.entity}
+                    {a.entity_id ? ` #${a.entity_id}` : ''} · {relative(a.created_at)}
+                  </div>
+                </div>
+              ))
+            )}
+          </Card>
+        </div>
       </div>
 
-      {/* Delete confirm */}
-      {confirm && (
-        <div className="no-print fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <div className="text-3xl mb-2">🗑</div>
-            <h3 className="text-lg font-bold text-slate-800 mb-1">ยืนยันการลบ</h3>
-            {confirm.mode === 'single' ? (
-              <p className="text-sm text-slate-600">
-                ลบใบเสร็จ <span className="font-semibold">#{String(confirm.sale.id).padStart(6, '0')}</span> ({fmt(confirm.sale.total)}) ถาวร?
-                <br />
-                <span className="text-red-500">สต็อกสินค้าจะถูกคืนอัตโนมัติ</span>
-              </p>
-            ) : (
-              <p className="text-sm text-slate-600">
-                ลบ <span className="font-semibold">{selected.size} รายการ</span> รวม {fmt(selectedTotal)} ถาวร?
-                <br />
-                <span className="text-red-500">สต็อกสินค้าจะถูกคืนอัตโนมัติ</span>
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-3 mt-5">
-              <button onClick={() => setConfirm(null)} disabled={busy} className="py-3 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-slate-200 transition">
-                {TH.cancel}
-              </button>
-              <button onClick={confirmDelete} disabled={busy} className="py-3 rounded-xl bg-red-600 text-white font-bold hover:bg-red-500 disabled:opacity-40 transition">
-                {busy ? '…' : `ลบ ${confirm.mode === 'bulk' ? selected.size : 1} รายการ`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sale detail */}
       {detail && (
-        <div className="no-print fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
-          <div className="bg-white rounded-2xl p-5 w-full max-w-md shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-slate-800">ใบเสร็จ #{String(detail.id).padStart(6, '0')}</h3>
-              <button onClick={() => setDetail(null)} className="text-slate-400 hover:text-slate-600 text-xl px-1">
-                ✕
-              </button>
-            </div>
-            <div className="text-xs text-slate-500 space-y-0.5 mb-3">
-              <div>{fmtDate(detail.created_at)} · {detail.event_name}</div>
-              <div>{TH.cashier}: {detail.cashier_name} · {PAYMENT_LABELS[detail.payment_method] ?? detail.payment_method}</div>
-            </div>
-            <div className="border-t border-dashed pt-3 space-y-1.5">
-              {(detail.items ?? []).map((it) => (
-                <div key={it.id} className="flex justify-between text-sm">
-                  <span className="text-slate-700">
-                    {it.name} <span className="text-slate-400">×{Number.isInteger(it.qty) ? it.qty : it.qty.toFixed(2)}</span>
-                  </span>
-                  <span className="font-medium">{fmt(it.line_total)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-dashed mt-3 pt-3 space-y-1">
-              <div className="flex justify-between text-sm text-slate-600">
-                <span>{TH.subtotal}</span>
-                <span>{fmt(detail.subtotal)}</span>
-              </div>
-              {detail.discount > 0 && (
-                <div className="flex justify-between text-sm text-slate-600">
-                  <span>{TH.discount}</span>
-                  <span>-{fmt(detail.discount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-bold text-lg">
-                <span>{TH.total}</span>
-                <span className="text-emerald-600">{fmt(detail.total)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Modal title={`${TH.receiptNo} #${String(detail.id).padStart(6, '0')}`} onClose={() => setDetail(null)}>
+          <SaleDetail sale={detail} isSuper={isSuper} onChanged={() => { setDetail(null); setTick((t) => t + 1); }} />
+        </Modal>
       )}
     </div>
   );

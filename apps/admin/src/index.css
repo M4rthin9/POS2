@@ -22,15 +22,172 @@ body {
   background: transparent;
 }
 
+/* Print-only content is hidden on screen and revealed by the print block below. */
+.print-only {
+  display: none;
+}
+
+/* ── Formal government document ──
+   Sarabun is the web-available match for TH SarabunPSK, the typeface Thai
+   government documents are set in. Applied on screen too so the preview is
+   honest about what will come out of the printer. */
+.gov-doc {
+  font-family: 'Sarabun', 'Noto Sans Thai', ui-sans-serif, sans-serif;
+  color: #0f172a;
+  background: #fff;
+  padding: 14mm 12mm;
+  margin: 0 auto;
+  max-width: 210mm;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+  border-radius: 0.5rem;
+  font-size: 11pt;
+  line-height: 1.45;
+}
+
+.gov-section {
+  margin-top: 1.1rem;
+}
+
+.gov-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+}
+.gov-table th,
+.gov-table td {
+  border: 1px solid #475569;
+  padding: 3px 6px;
+  vertical-align: top;
+}
+.gov-table thead th {
+  background: #e2e8f0;
+  font-weight: 600;
+  text-align: center;
+}
+.gov-table tfoot td {
+  background: #f1f5f9;
+}
+/* The overview block is a label/value list, not a grid — drop the inner rules. */
+.gov-section > .gov-table > tbody > tr > td:first-child:not([class*='text-']) {
+  background: #f8fafc;
+}
+
 @media print {
-  .no-print {
-    display: none !important;
+  /* Isolation: hide the whole app, then reveal only the report subtree. Same
+     approach as the POS receipt (apps/pos/src/index.css) — more reliable than
+     tagging every wrapper with .no-print. */
+  body * {
+    visibility: hidden;
   }
-  body {
-    background: #fff;
+  #report-print,
+  #report-print * {
+    visibility: visible;
   }
   #report-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
     display: block;
+  }
+
+  .no-print,
+  .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  .print-only {
+    display: block;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Keep badge/bar fills instead of letting the browser drop backgrounds. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+  /* Wide ledger tables opt into landscape via <PrintDoc orientation="landscape">.
+     @page cannot be nested in a selector, so this uses a named page instead;
+     browsers without named-page support simply stay portrait. */
+  @page landscape-doc {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+  html[data-print-orientation='landscape'] #report-print {
+    page: landscape-doc;
+  }
+
+  #report-print {
+    font-size: 10pt;
+    color: #0f172a;
+  }
+
+  /* On paper the document is the page — drop the on-screen sheet chrome. */
+  .gov-doc {
+    max-width: none;
+    padding: 0;
+    margin: 0;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  .gov-header {
+    margin-bottom: 0.5rem;
+  }
+  /* The approval block belongs at the very end, never orphaned on its own page. */
+  .gov-signatures {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Repeat table headers on every page and never split a row. */
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+  tr,
+  .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  /* Crisp grid borders — screen styling relies on subtle shadows that vanish in print. */
+  #report-print table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  #report-print th,
+  #report-print td {
+    border: 1px solid #94a3b8;
+    padding: 3px 6px;
+  }
+  #report-print th {
+    background: #e2e8f0 !important;
+    font-weight: 600;
+  }
+
+  /* Scroll containers must lay flat on paper. */
+  #report-print .overflow-x-auto,
+  #report-print .overflow-y-auto,
+  #report-print [class*='max-h-'] {
+    overflow: visible !important;
+    max-height: none !important;
   }
 }
 

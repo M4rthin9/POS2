@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { requireAuth, requireAdmin, requireSuperAdmin } from '../middleware';
 import { ok, fail, badRequest, notFound } from '../lib/http';
 import { hashPin, randomSalt, isValidPin } from '../lib/password';
+import { auditStatement } from '../lib/audit';
 import type { Env, Variables } from '../env';
 
 const admin = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -79,11 +80,25 @@ admin.get('/stats', async (c) => {
   const divMap = await c.env.DB.prepare('SELECT id, name FROM divisions').all();
   const divNames = new Map<number, string>(divMap.results.map((r) => [Number(r.id), r.name as string]));
 
+  // Split bills tender through sale_payments; unsplit sales use payment_method.
+  const splitRows = saleIds.length
+    ? await c.env.DB.prepare(
+        `SELECT sale_id, method, amount FROM sale_payments WHERE sale_id IN (${saleIds.map(() => '?').join(',')})`,
+      ).bind(...saleIds).all<{ sale_id: number; method: string; amount: number }>()
+    : { results: [] as { sale_id: number; method: string; amount: number }[] };
+  const splitBySale = new Map<number, { method: string; amount: number }[]>();
+  for (const p of splitRows.results) {
+    const list = splitBySale.get(Number(p.sale_id)) ?? [];
+    list.push({ method: String(p.method), amount: Number(p.amount) });
+    splitBySale.set(Number(p.sale_id), list);
+  }
+
   for (const s of sales) {
     const total = Number(s.total);
     totalRevenue += total;
     totalDiscount += Number(s.discount);
-    paymentBreakdown[s.payment_method as string] = (paymentBreakdown[s.payment_method as string] || 0) + total;
+    const tenders = splitBySale.get(Number(s.id)) ?? [{ method: s.payment_method as string, amount: total }];
+    for (const t of tenders) paymentBreakdown[t.method] = (paymentBreakdown[t.method] || 0) + t.amount;
     const day = String(s.created_at).slice(0, 10);
     daily[day] = (daily[day] || 0) + total;
   }
@@ -108,6 +123,179 @@ admin.get('/stats', async (c) => {
     division_breakdown: divisionBreakdown,
     product_breakdown: productBreakdown,
     daily,
+  });
+});
+
+// ── Operations dashboard ──
+//
+// One aggregated payload so the dashboard polls a single endpoint instead of
+// fanning out to overview/stats/events/sales on every refresh.
+admin.get('/dashboard', async (c) => {
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+  const eventId = Number(c.req.query('event_id')) || null;
+  const today = new Date().toISOString().slice(0, 10);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+
+  const where = ['1=1'];
+  const args: unknown[] = [];
+  if (from) { where.push('date(s.created_at) >= ?'); args.push(from); }
+  if (to) { where.push('date(s.created_at) <= ?'); args.push(to); }
+  if (eventId) { where.push('s.event_id = ?'); args.push(eventId); }
+  const scope = where.join(' AND ');
+
+  const thresholdRow = await c.env.DB.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").first<{ value: string }>();
+  const threshold = Math.max(0, Number(thresholdRow?.value ?? 5) || 0);
+
+  const [kpiRow, payments, daily, divisions, recent, events, cashiers, lowStock, audit, reconcileRow, todayRow] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT COALESCE(SUM(CASE WHEN s.status='COMPLETED' THEN s.subtotal END),0) AS gross,
+              COALESCE(SUM(CASE WHEN s.status='COMPLETED' THEN s.discount END),0) AS discount,
+              COALESCE(SUM(CASE WHEN s.status='COMPLETED' THEN s.total END),0) AS net,
+              COALESCE(SUM(CASE WHEN s.status='COMPLETED' THEN 1 END),0) AS completed,
+              COALESCE(SUM(CASE WHEN s.status='VOID' THEN 1 END),0) AS voided,
+              COALESCE(SUM(CASE WHEN s.status='REFUNDED' THEN 1 END),0) AS refunded
+       FROM sales s WHERE ${scope}`,
+    ).bind(...args).first<Record<string, number>>(),
+
+    // Split bills record their tenders in sale_payments; sales without a split
+    // fall back to the single payment_method column.
+    c.env.DB.prepare(
+      `SELECT COALESCE(sp.method, s.payment_method) AS k, COALESCE(SUM(COALESCE(sp.amount, s.total)),0) AS v
+       FROM sales s LEFT JOIN sale_payments sp ON sp.sale_id = s.id
+       WHERE ${scope} AND s.status='COMPLETED' GROUP BY k`,
+    ).bind(...args).all(),
+
+    c.env.DB.prepare(
+      `SELECT date(s.created_at) AS d, COALESCE(SUM(s.total),0) AS v FROM sales s
+       WHERE ${scope} AND s.status='COMPLETED' GROUP BY date(s.created_at) ORDER BY d`,
+    ).bind(...args).all(),
+
+    c.env.DB.prepare(
+      `SELECT COALESCE(d.name, 'อื่นๆ') AS k, COALESCE(SUM(si.line_total),0) AS v
+       FROM sale_items si
+       JOIN sales s ON s.id = si.sale_id
+       LEFT JOIN products p ON p.id = si.product_id
+       LEFT JOIN divisions d ON d.id = p.division_id
+       WHERE ${scope} AND s.status='COMPLETED' GROUP BY k ORDER BY v DESC`,
+    ).bind(...args).all(),
+
+    c.env.DB.prepare(
+      `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
+              s.subtotal, s.discount, s.total, s.payment_method, s.status, s.created_at, s.tx_hash
+       FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id
+       WHERE ${scope} ORDER BY s.id DESC LIMIT 15`,
+    ).bind(...args).all(),
+
+    c.env.DB.prepare(
+      `SELECT e.id, e.code, e.name, e.status, e.date,
+              COALESCE(SUM(CASE WHEN s.status='COMPLETED' AND date(s.created_at)=date('now') THEN 1 END),0) AS today_sales,
+              COALESCE(SUM(CASE WHEN s.status='COMPLETED' AND date(s.created_at)=date('now') THEN s.total END),0) AS today_revenue,
+              MAX(s.created_at) AS last_sale_at
+       FROM events e LEFT JOIN sales s ON s.event_id = e.id
+       GROUP BY e.id
+       ORDER BY CASE e.status WHEN 'ACTIVE' THEN 0 WHEN 'UPCOMING' THEN 1 ELSE 2 END, e.id DESC LIMIT 12`,
+    ).all(),
+
+    c.env.DB.prepare(
+      `SELECT u.id AS user_id, u.display_name,
+              COUNT(s.id) AS sale_count,
+              COALESCE(SUM(s.total),0) AS revenue,
+              COALESCE(SUM(CASE WHEN s.payment_method='Cash' THEN s.total END),0) AS cash,
+              COALESCE(SUM(CASE WHEN s.payment_method='PromptPay' THEN s.total END),0) AS promptpay,
+              MAX(s.created_at) AS last_sale_at
+       FROM sales s JOIN users u ON u.id = s.cashier_user_id
+       WHERE ${scope} AND s.status='COMPLETED'
+       GROUP BY u.id ORDER BY revenue DESC LIMIT 12`,
+    ).bind(...args).all(),
+
+    c.env.DB.prepare(
+      `SELECT p.id, p.sku, p.name, p.stock, d.name AS division_name,
+              COALESCE((SELECT SUM(si.qty) FROM sale_items si JOIN sales s2 ON s2.id = si.sale_id
+                        WHERE si.product_id = p.id AND s2.status='COMPLETED' AND date(s2.created_at)=date('now')),0) AS sold_today
+       FROM products p LEFT JOIN divisions d ON d.id = p.division_id
+       WHERE p.active = 1 AND p.stock IS NOT NULL AND p.stock <= ?
+       ORDER BY p.stock, p.name LIMIT 30`,
+    ).bind(threshold).all(),
+
+    c.env.DB.prepare(
+      `SELECT a.*, u.display_name AS actor_name FROM audit_log a
+       LEFT JOIN users u ON u.id = a.actor_user_id ORDER BY a.id DESC LIMIT 10`,
+    ).all(),
+
+    // PromptPay receipts the finance office has to tick off against the bank
+    // statement by hand — the system never ingests statement files.
+    c.env.DB.prepare(
+      `SELECT COALESCE(SUM(COALESCE(sp.amount, s.total)),0) AS amount, COUNT(*) AS n
+       FROM sales s LEFT JOIN sale_payments sp ON sp.sale_id = s.id
+       WHERE ${scope} AND s.status='COMPLETED' AND COALESCE(sp.method, s.payment_method) = 'PromptPay'`,
+    ).bind(...args).first<Record<string, number>>(),
+
+    c.env.DB.prepare(
+      `SELECT COALESCE(SUM(total),0) AS net, COUNT(*) AS n FROM sales
+       WHERE date(created_at) = date('now') AND status='COMPLETED'`,
+    ).first<Record<string, number>>(),
+  ]);
+
+  const zRow = await c.env.DB
+    .prepare('SELECT * FROM z_reports WHERE business_date = ? AND COALESCE(event_id,0) = ? ORDER BY id DESC LIMIT 1')
+    .bind(today, eventId ?? 0)
+    .first();
+
+  const completed = Number(kpiRow?.completed ?? 0);
+  const net = r2(Number(kpiRow?.net ?? 0));
+  const toMap = (rows: { results: Record<string, unknown>[] }, keyCol = 'k', valCol = 'v') => {
+    const m: Record<string, number> = {};
+    for (const r of rows.results) m[String(r[keyCol])] = r2(Number(r[valCol]));
+    return m;
+  };
+  const paymentMap = toMap(payments);
+  const cashTotal = r2(paymentMap.Cash ?? 0);
+
+  return ok(c, {
+    period: { from: from ?? null, to: to ?? null, label: '' },
+    kpi: {
+      gross: r2(Number(kpiRow?.gross ?? 0)),
+      discount: r2(Number(kpiRow?.discount ?? 0)),
+      net,
+      cash_total: cashTotal,
+      promptpay_total: r2(paymentMap.PromptPay ?? 0),
+      orders_completed: completed,
+      orders_void: Number(kpiRow?.voided ?? 0),
+      orders_refunded: Number(kpiRow?.refunded ?? 0),
+      avg_basket: completed ? r2(net / completed) : 0,
+      low_stock_count: lowStock.results.length,
+      today_net: r2(Number(todayRow?.net ?? 0)),
+      today_orders: Number(todayRow?.n ?? 0),
+    },
+    payment_breakdown: paymentMap,
+    division_breakdown: toMap(divisions),
+    daily: toMap(daily, 'd', 'v'),
+    recent_sales: recent.results,
+    events: events.results.map((e) => ({
+      id: Number(e.id), code: e.code, name: e.name, status: e.status, date: e.date,
+      today_sales: Number(e.today_sales), today_revenue: r2(Number(e.today_revenue)), last_sale_at: e.last_sale_at,
+    })),
+    cashiers: cashiers.results.map((u) => ({
+      user_id: Number(u.user_id), display_name: u.display_name, sale_count: Number(u.sale_count),
+      revenue: r2(Number(u.revenue)), cash: r2(Number(u.cash)), promptpay: r2(Number(u.promptpay)), last_sale_at: u.last_sale_at,
+    })),
+    low_stock: lowStock.results.map((p) => ({
+      id: Number(p.id), sku: p.sku, name: p.name, stock: Number(p.stock),
+      division_name: p.division_name ?? null, sold_today: Number(p.sold_today),
+    })),
+    audit_tail: audit.results,
+    promptpay_trace: {
+      amount: r2(Number(reconcileRow?.amount ?? 0)),
+      count: Number(reconcileRow?.n ?? 0),
+    },
+    zreport: {
+      closed: !!zRow,
+      closed_at: zRow ? String(zRow.closed_at) : null,
+      cash_expected: zRow ? r2(Number(zRow.cash_expected)) : cashTotal,
+      cash_counted: zRow && zRow.cash_counted !== null ? r2(Number(zRow.cash_counted)) : null,
+      variance: zRow && zRow.variance !== null ? r2(Number(zRow.variance)) : null,
+    },
   });
 });
 
@@ -253,14 +441,22 @@ admin.delete('/events/:id', async (c) => {
   return ok(c, { deleted: id });
 });
 
+// Several booths run at once, so activating one event no longer closes the
+// others — cashiers pick whichever active event they are working.
 admin.post('/events/:id/activate', async (c) => {
   const id = Number(c.req.param('id'));
   const ev = await c.env.DB.prepare('SELECT id FROM events WHERE id = ?').bind(id).first();
   if (!ev) return notFound(c);
-  await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE events SET status = 'UPCOMING' WHERE status = 'ACTIVE' AND id != ?").bind(id),
-    c.env.DB.prepare("UPDATE events SET status = 'ACTIVE' WHERE id = ?").bind(id),
-  ]);
+  await c.env.DB.prepare("UPDATE events SET status = 'ACTIVE' WHERE id = ?").bind(id).run();
+  const updated = await c.env.DB.prepare('SELECT id, code, name, date, location, status, created_at FROM events WHERE id = ?').bind(id).first();
+  return ok(c, updated);
+});
+
+admin.post('/events/:id/close', async (c) => {
+  const id = Number(c.req.param('id'));
+  const ev = await c.env.DB.prepare('SELECT id FROM events WHERE id = ?').bind(id).first();
+  if (!ev) return notFound(c);
+  await c.env.DB.prepare("UPDATE events SET status = 'CLOSED' WHERE id = ?").bind(id).run();
   const updated = await c.env.DB.prepare('SELECT id, code, name, date, location, status, created_at FROM events WHERE id = ?').bind(id).first();
   return ok(c, updated);
 });
@@ -421,7 +617,10 @@ admin.get('/settings', async (c) => {
 
 admin.put('/settings', async (c) => {
   const b = await c.req.json().catch(() => null);
-  const allowed = ['org_name', 'org_subtitle', 'org_address', 'tax_id', 'promptpay_id', 'receipt_footer', 'print_size', 'logo_url'];
+  const allowed = [
+    'org_name', 'org_subtitle', 'org_address', 'tax_id', 'promptpay_id', 'receipt_footer', 'print_size', 'logo_url',
+    'low_stock_threshold', 'reconcile_fee_tolerance', 'terminal_id', 'bank_account_no', 'bank_name',
+  ];
   const stmts: D1PreparedStatement[] = [];
   for (const key of allowed) {
     if (b && key in b) {
@@ -443,16 +642,112 @@ admin.get('/sales', async (c) => {
   const cashierId = c.req.query('cashier_id');
   const from = c.req.query('from');
   const to = c.req.query('to');
+  const status = c.req.query('status');
   let sql = `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
-                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at
+                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at,
+                    s.tx_hash, s.seq, s.voided_at, s.voided_by, s.void_reason
              FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id WHERE 1=1`;
   const args: unknown[] = [];
   if (eventId) { sql += ' AND s.event_id = ?'; args.push(Number(eventId)); }
   if (cashierId) { sql += ' AND s.cashier_user_id = ?'; args.push(Number(cashierId)); }
   if (from) { sql += ' AND date(s.created_at) >= ?'; args.push(from); }
   if (to) { sql += ' AND date(s.created_at) <= ?'; args.push(to); }
+  if (status && ['COMPLETED', 'VOID', 'REFUNDED'].includes(status)) { sql += ' AND s.status = ?'; args.push(status); }
   sql += ' ORDER BY s.id DESC LIMIT 500';
   const { results } = await c.env.DB.prepare(sql).bind(...args).all();
+  return ok(c, results);
+});
+
+// ── Void / refund ──
+//
+// The non-destructive corrections. Both keep the sale row (and its ledger hash)
+// intact, restore stock, and leave an audit trail — unlike the hard delete below.
+async function reverseSale(
+  c: Parameters<typeof auditStatement>[0],
+  id: number,
+  nextStatus: 'VOID' | 'REFUNDED',
+  reason: string,
+  action: string,
+) {
+  const sale = await c.env.DB.prepare('SELECT * FROM sales WHERE id = ?').bind(id).first();
+  if (!sale) return notFound(c);
+  if (sale.status !== 'COMPLETED') return fail(c, 'บิลนี้ถูกยกเลิกหรือคืนเงินไปแล้ว', 409, 'NOT_COMPLETED');
+
+  const items = await c.env.DB
+    .prepare('SELECT product_id, qty FROM sale_items WHERE sale_id = ?')
+    .bind(id)
+    .all<{ product_id: number | null; qty: number }>();
+
+  const user = c.get('user');
+  const stmts: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      `UPDATE sales SET status = ?, voided_at = datetime('now'), voided_by = ?, void_reason = ?
+       WHERE id = ? AND status = 'COMPLETED'`,
+    ).bind(nextStatus, user.id, reason || null, id),
+  ];
+  for (const item of items.results) {
+    if (item.product_id !== null) {
+      // Untracked (NULL stock) products are left alone by the IS NOT NULL guard.
+      stmts.push(
+        c.env.DB.prepare('UPDATE products SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL').bind(Number(item.qty), item.product_id),
+      );
+    }
+  }
+  // A reversed PromptPay sale is no longer expected to settle.
+  stmts.push(c.env.DB.prepare('DELETE FROM reconciliation_records WHERE sale_id = ?').bind(id));
+  stmts.push(
+    auditStatement(c, {
+      action,
+      entity: 'sales',
+      entity_id: id,
+      before: { status: sale.status, total: sale.total },
+      after: { status: nextStatus },
+      reason: reason || null,
+    }),
+  );
+
+  await c.env.DB.batch(stmts);
+  const updated = await c.env.DB.prepare('SELECT * FROM sales WHERE id = ?').bind(id).first();
+  return ok(c, updated);
+}
+
+admin.post('/sales/:id/void', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return badRequest(c, 'เลขที่การขายไม่ถูกต้อง');
+  const b = await c.req.json().catch(() => null);
+  return reverseSale(c, id, 'VOID', String(b?.reason || '').slice(0, 300), 'SALE_VOID');
+});
+
+admin.post('/sales/:id/refund', requireSuperAdmin, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return badRequest(c, 'เลขที่การขายไม่ถูกต้อง');
+  const b = await c.req.json().catch(() => null);
+  return reverseSale(c, id, 'REFUNDED', String(b?.reason || '').slice(0, 300), 'SALE_REFUND');
+});
+
+// ── Audit log ──
+admin.get('/audit', async (c) => {
+  const from = c.req.query('from');
+  const to = c.req.query('to');
+  const entity = c.req.query('entity');
+  const actor = Number(c.req.query('actor')) || null;
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 200, 1), 1000);
+
+  const where = ['1=1'];
+  const args: unknown[] = [];
+  if (from) { where.push('date(a.created_at) >= ?'); args.push(from); }
+  if (to) { where.push('date(a.created_at) <= ?'); args.push(to); }
+  if (entity) { where.push('a.entity = ?'); args.push(entity); }
+  if (actor) { where.push('a.actor_user_id = ?'); args.push(actor); }
+
+  const { results } = await c.env.DB
+    .prepare(
+      `SELECT a.*, u.display_name AS actor_name FROM audit_log a
+       LEFT JOIN users u ON u.id = a.actor_user_id
+       WHERE ${where.join(' AND ')} ORDER BY a.id DESC LIMIT ${limit}`,
+    )
+    .bind(...args)
+    .all();
   return ok(c, results);
 });
 
@@ -487,9 +782,11 @@ async function buildDeleteStatements(db: D1Database, ids: number[]) {
 admin.delete('/sales/:id', requireSuperAdmin, async (c) => {
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return badRequest(c, 'เลขที่การขายไม่ถูกต้อง');
-  const sale = await c.env.DB.prepare('SELECT id FROM sales WHERE id = ?').bind(id).first();
+  const sale = await c.env.DB.prepare('SELECT * FROM sales WHERE id = ?').bind(id).first();
   if (!sale) return notFound(c);
   const stmts = await buildDeleteStatements(c.env.DB, [id]);
+  // Audit first: once the row is gone this is the only remaining record of it.
+  stmts.unshift(auditStatement(c, { action: 'SALE_DELETE', entity: 'sales', entity_id: id, before: sale }));
   await c.env.DB.batch(stmts);
   return ok(c, { deleted: 1 });
 });
@@ -502,10 +799,11 @@ admin.post('/sales/bulk-delete', requireSuperAdmin, async (c) => {
   if (ids.length === 0) return badRequest(c, 'ไม่พบรายการที่เลือก');
   if (ids.length > 500) return badRequest(c, 'เลือกลบได้ครั้งละไม่เกิน 500 รายการ');
   const unique = [...new Set(ids)];
-  const rows = await c.env.DB.prepare(`SELECT id FROM sales WHERE id IN (${unique.map(() => '?').join(',')})`).bind(...unique).all<{ id: number }>();
+  const rows = await c.env.DB.prepare(`SELECT * FROM sales WHERE id IN (${unique.map(() => '?').join(',')})`).bind(...unique).all<{ id: number }>();
   const existing = unique.filter((id) => rows.results.some((r) => r.id === id));
   if (existing.length === 0) return notFound(c);
   const stmts = await buildDeleteStatements(c.env.DB, existing);
+  stmts.unshift(auditStatement(c, { action: 'SALE_BULK_DELETE', entity: 'sales', before: rows.results, after: { ids: existing } }));
   await c.env.DB.batch(stmts);
   return ok(c, { deleted: existing.length });
 });

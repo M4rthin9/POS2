@@ -1,18 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { CidaEvent, Division, Product, Sale } from '@cida/shared';
-import { fmt, TH } from '@cida/shared';
+import type { CartItem, CidaEvent, Division, PaymentMethod, Product, Sale } from '@cida/shared';
+import { fmt, fmtDate, TH } from '@cida/shared';
 import { api, syncQueue, getQueue, addToQueue } from '../lib/api';
 import { useAuth } from '../store/auth';
 import { useCart, cartTotals } from '../store/cart';
+import { getHeld, holdCart, releaseHeld, type HeldCart } from '../store/held';
 import PromptPayModal from '../components/PromptPayModal';
+import SplitBillModal, { type SplitPayment } from '../components/SplitBillModal';
 import { Receipt } from '../components/Receipt';
 
 export default function SalesPage() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
   const clearAuth = useAuth((s) => s.clear);
-  const { items, discount, eventId, add, setQty, remove, setDiscount, setEvent, clear } = useCart();
+  const { items, discount, eventId, add, setQty, remove, setDiscount, setEvent, clear, load: loadCart, bindUser } = useCart();
+
+  // Booth devices are shared between shifts — a new cashier starts clean.
+  useEffect(() => {
+    bindUser(user?.id ?? null);
+  }, [user?.id, bindUser]);
 
   const [events, setEvents] = useState<CidaEvent[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -29,7 +36,8 @@ export default function SalesPage() {
   });
   const [activeDiv, setActiveDiv] = useState<number | 'all'>('all');
   const [search, setSearch] = useState('');
-  const [modal, setModal] = useState<'cash' | 'pp' | null>(null);
+  const [modal, setModal] = useState<'cash' | 'pp' | 'split' | 'held' | null>(null);
+  const [held, setHeld] = useState<HeldCart[]>(getHeld());
   const [cashGiven, setCashGiven] = useState('');
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,13 +52,13 @@ export default function SalesPage() {
     await Promise.all([
       api.publicSettings().then((s) => setSettings(s)),
       api.divisions().then(setDivisions),
-      api.events().then((evs) => {
+      // Several booths sell at once, so every ACTIVE event is selectable and the
+      // cashier chooses the one they are working. Closed events are hidden so a
+      // sale cannot land on a finished event.
+      api.activeEvents().then((evs) => {
         setEvents(evs);
         const stillValid = eventId && evs.some((e) => e.id === eventId);
-        if (!stillValid) {
-          const active = evs.find((e) => e.status === 'ACTIVE');
-          setEvent(active ? active.id : evs.length ? evs[0].id : null);
-        }
+        if (!stillValid) setEvent(evs.length === 1 ? evs[0].id : null);
       }),
     ]).catch(() => setError(TH.error));
   }
@@ -90,18 +98,24 @@ export default function SalesPage() {
     }
   }
 
+  // Sold-out products stay on the grid so staff can see what ran out, but they
+  // sink to the bottom so they never crowd out what is still sellable.
   const filtered = useMemo(() => {
-    return products.filter((p) => {
+    const match = products.filter((p) => {
       if (activeDiv !== 'all' && p.division_id !== activeDiv) return false;
       if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.sku.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
+    const isOut = (p: Product) => p.stock !== null && p.stock <= 0;
+    return [...match].sort((a, b) => Number(isOut(a)) - Number(isOut(b)));
   }, [products, activeDiv, search]);
+
+  const soldOutCount = useMemo(() => products.filter((p) => p.stock !== null && p.stock <= 0).length, [products]);
 
   const { subtotal, total } = cartTotals(items, discount);
   const change = cashGiven !== '' && modal === 'cash' ? Math.max(0, Number(cashGiven) - total) : 0;
 
-  async function confirmSale(method: 'Cash' | 'PromptPay') {
+  async function confirmSale(method: PaymentMethod, payments?: SplitPayment[]) {
     if (!eventId || items.length === 0) return;
     setBusy(true);
     setError('');
@@ -111,6 +125,7 @@ export default function SalesPage() {
       discount,
       payment_method: method,
       client_sale_id: crypto.randomUUID(),
+      ...(payments?.length ? { payments } : {}),
     };
     if (!navigator.onLine) {
       addToQueue(payload);
@@ -136,6 +151,36 @@ export default function SalesPage() {
 
   function printReceipt() {
     window.print();
+  }
+
+  // ── Hold / retrieve cart ──
+  function park() {
+    if (items.length === 0) return;
+    const event = events.find((e) => e.id === eventId);
+    holdCart({
+      label: `${event?.name ?? '—'} · ${items.length} ${TH.records}`,
+      event_id: eventId,
+      items,
+      discount,
+      total,
+    });
+    setHeld(getHeld());
+    clear();
+    setShowCart(false);
+  }
+
+  function retrieve(cart: HeldCart) {
+    // Anything currently in the cart is parked rather than dropped.
+    if (items.length > 0) park();
+    loadCart(cart.items as CartItem[], cart.discount, cart.event_id);
+    releaseHeld(cart.id);
+    setHeld(getHeld());
+    setModal(null);
+  }
+
+  function discard(id: string) {
+    releaseHeld(id);
+    setHeld(getHeld());
   }
 
   function logout() {
@@ -170,10 +215,10 @@ export default function SalesPage() {
           </button>
           <select
             value={eventId ?? ''}
-            onChange={(e) => setEvent(Number(e.target.value))}
-            className="hidden sm:block text-black text-sm rounded-lg px-2 py-1.5 bg-white max-w-40"
+            onChange={(e) => setEvent(e.target.value ? Number(e.target.value) : null)}
+            className={`hidden sm:block text-black text-sm rounded-lg px-2 py-1.5 max-w-44 ${eventId ? 'bg-white' : 'bg-amber-300 font-semibold'}`}
           >
-            <option value="">เลือกงาน</option>
+            <option value="">— เลือกกิจกรรม —</option>
             {events.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.name}
@@ -194,8 +239,12 @@ export default function SalesPage() {
 
       {/* Event selector (mobile) */}
       <div className="sm:hidden bg-white border-b px-3 py-1.5">
-        <select value={eventId ?? ''} onChange={(e) => setEvent(Number(e.target.value))} className="w-full text-sm rounded-lg px-2 py-1.5 bg-slate-50 border border-slate-200">
-          <option value="">เลือกงาน</option>
+        <select
+          value={eventId ?? ''}
+          onChange={(e) => setEvent(e.target.value ? Number(e.target.value) : null)}
+          className={`w-full text-sm rounded-lg px-2 py-1.5 border ${eventId ? 'bg-slate-50 border-slate-200' : 'bg-amber-100 border-amber-300 font-semibold'}`}
+        >
+          <option value="">— เลือกกิจกรรม —</option>
           {events.map((e) => (
             <option key={e.id} value={e.id}>
               {e.name}
@@ -203,6 +252,17 @@ export default function SalesPage() {
           ))}
         </select>
       </div>
+
+      {/* Several events can be open at once, so the cashier must say which booth
+          they are on before anything can be rung up. */}
+      {!eventId && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-sm px-4 py-2.5 flex items-center gap-2">
+          <span className="text-lg">🎪</span>
+          <span>
+            {events.length === 0 ? 'ยังไม่มีกิจกรรมที่เปิดขาย กรุณาติดต่อผู้ดูแลระบบ' : 'กรุณาเลือกกิจกรรมที่ปฏิบัติหน้าที่ก่อนเริ่มขาย'}
+          </span>
+        </div>
+      )}
 
       {/* Error banner */}
       {error && !modal && (
@@ -253,6 +313,11 @@ export default function SalesPage() {
                 {d.icon} {d.name}
               </button>
             ))}
+            {soldOutCount > 0 && (
+              <span className="px-3 py-1.5 rounded-full text-sm whitespace-nowrap bg-red-50 text-red-600 font-semibold flex-none">
+                {TH.outOfStock} {soldOutCount}
+              </span>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-3">
@@ -271,10 +336,19 @@ export default function SalesPage() {
                       key={p.id}
                       disabled={out}
                       onClick={() => !out && add(p)}
-                      className={`bg-white rounded-2xl shadow-sm border border-slate-100 p-2.5 text-left active:scale-[0.97] transition overflow-hidden ${out ? 'opacity-40' : 'hover:shadow-md hover:border-slate-200'}`}
+                      className={`relative bg-white rounded-2xl shadow-sm border p-2.5 text-left active:scale-[0.97] transition overflow-hidden ${
+                        out ? 'border-red-200 bg-red-50/40' : 'border-slate-100 hover:shadow-md hover:border-slate-200'
+                      }`}
                     >
+                      {/* Sold-out items stay visible and clearly marked so staff
+                          can tell "we sold it all" from "we never stocked it". */}
+                      {out && (
+                        <span className="absolute top-2 left-2 z-10 bg-red-600 text-white text-[10px] font-bold rounded-md px-1.5 py-0.5 shadow">
+                          {TH.outOfStock}
+                        </span>
+                      )}
                       {p.image_url ? (
-                        <div className="relative">
+                        <div className={`relative ${out ? 'grayscale opacity-60' : ''}`}>
                           <img src={p.image_url} alt={p.name} className="w-full aspect-square object-cover rounded-xl mb-2 bg-slate-100" />
                           {inCart && (
                             <span className="absolute top-1.5 right-1.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center shadow">
@@ -283,7 +357,7 @@ export default function SalesPage() {
                           )}
                         </div>
                       ) : (
-                        <div className="w-full aspect-square rounded-xl mb-2 bg-slate-100 flex items-center justify-center text-4xl">
+                        <div className={`w-full aspect-square rounded-xl mb-2 bg-slate-100 flex items-center justify-center text-4xl ${out ? 'grayscale opacity-60' : ''}`}>
                           {inCart ? (
                             <span className="relative">
                               🛍️
@@ -326,6 +400,10 @@ export default function SalesPage() {
             onDiscount={setDiscount}
             onCash={() => setModal('cash')}
             onPP={() => setModal('pp')}
+            onSplit={() => setModal('split')}
+            onHold={park}
+            onHeld={() => setModal('held')}
+            heldCount={held.length}
           />
         </aside>
       </div>
@@ -367,6 +445,16 @@ export default function SalesPage() {
                 setShowCart(false);
                 setModal('pp');
               }}
+              onSplit={() => {
+                setShowCart(false);
+                setModal('split');
+              }}
+              onHold={park}
+              onHeld={() => {
+                setShowCart(false);
+                setModal('held');
+              }}
+              heldCount={held.length}
             />
           </div>
         </div>
@@ -421,6 +509,66 @@ export default function SalesPage() {
         />
       )}
 
+      {/* Split bill modal */}
+      {modal === 'split' && (
+        <SplitBillModal
+          total={total}
+          busy={busy}
+          error={error}
+          onClose={() => setModal(null)}
+          onConfirm={(payments) => {
+            // payment_method is the largest tender; the API re-derives it too.
+            const primary = payments.reduce((a, p) => (p.amount > a.amount ? p : a));
+            confirmSale(primary.method, payments);
+          }}
+        />
+      )}
+
+      {/* Held carts */}
+      {modal === 'held' && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setModal(null)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-bold text-slate-800">⏸ {TH.heldCarts}</h2>
+              <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 text-xl px-1">
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {held.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">{TH.noHeldCarts}</p>
+              ) : (
+                held.map((c) => (
+                  <div key={c.id} className="border border-slate-200 rounded-xl p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{c.label}</div>
+                        <div className="text-xs text-slate-400">{fmtDate(c.created_at)}</div>
+                      </div>
+                      <div className="text-emerald-600 font-bold whitespace-nowrap">{fmt(c.total)}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <button
+                        onClick={() => discard(c.id)}
+                        className="py-2 rounded-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition"
+                      >
+                        🗑 {TH.discardCart}
+                      </button>
+                      <button
+                        onClick={() => retrieve(c)}
+                        className="py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-500 transition"
+                      >
+                        ▶ {TH.retrieveCart}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Receipt modal */}
       {lastSale && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
@@ -452,14 +600,29 @@ interface CartPanelProps {
   onDiscount: (v: number) => void;
   onCash: () => void;
   onPP: () => void;
+  onSplit: () => void;
+  onHold: () => void;
+  onHeld: () => void;
+  heldCount: number;
 }
 
-function CartPanel({ items, discount, subtotal, total, busy, onQty, onRemove, onDiscount, onCash, onPP }: CartPanelProps) {
+function CartPanel({ items, discount, subtotal, total, busy, onQty, onRemove, onDiscount, onCash, onPP, onSplit, onHold, onHeld, heldCount }: CartPanelProps) {
   return (
     <>
-      <div className="px-4 py-3 font-bold text-slate-800 border-b flex items-center justify-between">
+      <div className="px-4 py-3 font-bold text-slate-800 border-b flex items-center justify-between gap-2">
         <span>🛒 {TH.cart}</span>
-        <span className="text-xs font-semibold text-slate-400">{items.length} รายการ</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onHeld}
+            className="relative text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 transition"
+          >
+            ⏸ {TH.heldCarts}
+            {heldCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[10px] rounded-full min-w-4 h-4 px-1">{heldCount}</span>
+            )}
+          </button>
+          <span className="text-xs font-semibold text-slate-400">{items.length} รายการ</span>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {items.length === 0 ? (
@@ -511,14 +674,24 @@ function CartPanel({ items, discount, subtotal, total, busy, onQty, onRemove, on
           <span className="font-bold text-2xl text-emerald-600">{fmt(total)}</span>
         </div>
         {items.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button onClick={onCash} disabled={busy} className="py-3.5 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 disabled:opacity-40 active:scale-[0.98] transition">
-              💵 {TH.cash}
-            </button>
-            <button onClick={onPP} disabled={busy} className="py-3.5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 disabled:opacity-40 active:scale-[0.98] transition">
-              📱 {TH.promptpay}
-            </button>
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button onClick={onCash} disabled={busy} className="py-3.5 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 disabled:opacity-40 active:scale-[0.98] transition">
+                💵 {TH.cash}
+              </button>
+              <button onClick={onPP} disabled={busy} className="py-3.5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 disabled:opacity-40 active:scale-[0.98] transition">
+                📱 {TH.promptpay}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={onSplit} disabled={busy} className="py-2.5 rounded-xl bg-slate-100 text-slate-700 font-semibold text-sm hover:bg-slate-200 disabled:opacity-40 active:scale-[0.98] transition">
+                🧮 {TH.splitBill}
+              </button>
+              <button onClick={onHold} disabled={busy} className="py-2.5 rounded-xl bg-amber-100 text-amber-800 font-semibold text-sm hover:bg-amber-200 disabled:opacity-40 active:scale-[0.98] transition">
+                ⏸ {TH.holdCart}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </>

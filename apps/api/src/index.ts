@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import authRoutes from './routes/auth';
 import posRoutes from './routes/pos';
 import adminRoutes from './routes/admin';
+import ledgerRoutes from './routes/ledger';
 import { ok } from './lib/http';
 import type { Env } from './env';
 
@@ -33,6 +34,7 @@ app.get('/health', (c) => ok(c, { status: 'ok', time: new Date().toISOString() }
 app.route('/api/auth', authRoutes);
 app.route('/api', posRoutes);
 app.route('/api/admin', adminRoutes);
+app.route('/api/admin', ledgerRoutes);
 
 app.notFound((c) => c.json({ ok: false, error: 'Not found' }, 404));
 

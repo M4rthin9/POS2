@@ -41,6 +41,24 @@ export function todayKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Long-form Thai date for formal documents, e.g. '14 สิงหาคม 2569' (Buddhist era). */
+export function fmtThaiLong(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso.endsWith('Z') || iso.length <= 10 ? iso : iso + 'Z');
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+/** Amount without the ฿ symbol — formal Thai tables put the unit in the column head. */
+export function fmtAmt(amount: number): string {
+  return new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+}
+
+/** Whole numbers stay whole; fractional quantities keep two places. */
+export function fmtQty(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
 export function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

@@ -6,11 +6,17 @@ interface CartState {
   items: CartItem[];
   discount: number;
   eventId: number | null;
+  /** Whose cart this is. Booth devices are shared, so the cart and the chosen
+   *  event must not carry over to the next cashier who signs in. */
+  userId: number | null;
+  bindUser: (userId: number | null) => void;
   add: (product: Product, qty?: number) => void;
   setQty: (productId: number, qty: number) => void;
   remove: (productId: number) => void;
   setDiscount: (v: number) => void;
   setEvent: (eventId: number | null) => void;
+  /** Replace the cart wholesale — used when retrieving a held cart. */
+  load: (items: CartItem[], discount: number, eventId: number | null) => void;
   clear: () => void;
 }
 
@@ -20,6 +26,9 @@ export const useCart = create<CartState>()(
       items: [],
       discount: 0,
       eventId: null,
+      userId: null,
+      bindUser: (userId) =>
+        set((s) => (s.userId === userId ? { userId } : { userId, items: [], discount: 0, eventId: null })),
       add: (product, qty = 1) =>
         set((s) => {
           const existing = s.items.find((i) => i.product_id === product.id);
@@ -39,6 +48,7 @@ export const useCart = create<CartState>()(
       remove: (productId) => set((s) => ({ items: s.items.filter((i) => i.product_id !== productId) })),
       setDiscount: (discount) => set({ discount: Math.max(0, discount) }),
       setEvent: (eventId) => set({ eventId }),
+      load: (items, discount, eventId) => set((s) => ({ items, discount, eventId: eventId ?? s.eventId })),
       clear: () => set({ items: [], discount: 0 }),
     }),
     { name: 'cida_pos_cart' },

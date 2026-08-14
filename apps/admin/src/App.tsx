@@ -10,14 +10,20 @@ import UsersPage from './pages/UsersPage';
 import DivisionsPage from './pages/DivisionsPage';
 import SalesPage from './pages/SalesPage';
 import SettingsPage from './pages/SettingsPage';
+import ReportPage from './pages/ReportPage';
+import AuditPage from './pages/AuditPage';
+import ZReportPage from './pages/ZReportPage';
 
 const NAV = [
   { to: '/', label: TH.dashboard, icon: '📊', end: true },
+  { to: '/report', label: TH.salesReport, icon: '🧾' },
+  { to: '/zreport', label: TH.zReport, icon: '📋' },
+  { to: '/audit', label: TH.auditLog, icon: '🗒️' },
   { to: '/products', label: TH.products, icon: '📦' },
   { to: '/events', label: TH.events, icon: '🎪' },
   { to: '/divisions', label: TH.divisions, icon: '🗂️' },
   { to: '/users', label: TH.users, icon: '👥' },
-  { to: '/sales', label: TH.sales, icon: '🧾' },
+  { to: '/sales', label: TH.sales, icon: '💳' },
   { to: '/settings', label: TH.settings, icon: '⚙️' },
 ];
 
@@ -63,9 +69,9 @@ function Layout() {
       <div className="flex-1 flex flex-col min-w-0">
         <div className="no-print md:hidden bg-slate-900 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-20">
           <div className="font-bold">CIDA Admin</div>
-          <div className="flex gap-2">
+          <div className="flex gap-1 overflow-x-auto min-w-0">
             {NAV.map((n) => (
-              <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `px-2 py-1 rounded text-xs ${isActive ? 'bg-white/15' : ''}`}>
+              <NavLink key={n.to} to={n.to} end={n.end} title={n.label} className={({ isActive }) => `px-2 py-1 rounded text-xs flex-none ${isActive ? 'bg-white/15' : ''}`}>
                 {n.icon}
               </NavLink>
             ))}
@@ -77,6 +83,9 @@ function Layout() {
         <main className="flex-1 p-4 md:p-6 overflow-auto print:overflow-visible print:p-0">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/report" element={<ReportPage />} />
+            <Route path="/zreport" element={<ZReportPage />} />
+            <Route path="/audit" element={<AuditPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/users" element={<UsersPage />} />

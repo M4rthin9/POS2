@@ -34,11 +34,16 @@ export const Receipt = forwardRef<HTMLDivElement, Props>(function Receipt({ sale
 
       <Divider />
 
-      {/* Meta */}
+      {/* Meta — the event is printed because several booths sell at once and
+          each receipt has to say which one it belongs to. */}
       <div className="space-y-0.5">
         <div className="flex justify-between">
           <span className="text-slate-500">เลขที่ใบเสร็จ</span>
           <span className="font-semibold">#{String(sale.id).padStart(6, '0')}</span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-slate-500 flex-none">กิจกรรม</span>
+          <span className="font-semibold text-right">{sale.event_name || '-'}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-slate-500">วันที่</span>
@@ -52,6 +57,13 @@ export const Receipt = forwardRef<HTMLDivElement, Props>(function Receipt({ sale
           <span className="text-slate-500">ชำระโดย</span>
           <span className="font-semibold">{PAYMENT_LABELS[sale.payment_method] || sale.payment_method}</span>
         </div>
+        {(sale.payments?.length ?? 0) > 1 &&
+          sale.payments!.map((p) => (
+            <div key={p.id} className="flex justify-between text-[10px] text-slate-500 pl-2">
+              <span>· {PAYMENT_LABELS[p.method] || p.method}</span>
+              <span>{fmt(p.amount)}</span>
+            </div>
+          ))}
       </div>
 
       <Divider />

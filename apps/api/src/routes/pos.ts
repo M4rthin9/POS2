@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { requireAuth } from '../middleware';
 import { ok, fail, badRequest, notFound } from '../lib/http';
+import { sealSale } from '../lib/ledger';
 import type { PaymentMethod } from '@cida/shared';
 import type { Env, Variables } from '../env';
 
@@ -75,7 +76,7 @@ pos.get('/sales', async (c) => {
   const to = c.req.query('to');
 
   let sql = `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
-                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at
+                    s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at, s.tx_hash, s.seq
              FROM sales s
              JOIN events e ON e.id = s.event_id
              JOIN users u ON u.id = s.cashier_user_id
@@ -107,7 +108,7 @@ pos.get('/sales/:id', async (c) => {
   const user = c.get('user');
   const sale = await c.env.DB.prepare(
     `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
-            s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at
+            s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at, s.tx_hash, s.seq
      FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id
      WHERE s.id = ?`,
   )
@@ -115,26 +116,24 @@ pos.get('/sales/:id', async (c) => {
     .first();
   if (!sale) return notFound(c);
   if (user.role !== 'admin' && user.role !== 'superadmin' && sale.cashier_user_id !== user.id) return notFound(c);
-  const items = await c.env.DB.prepare(
-    'SELECT id, sale_id, product_id, sku, name, qty, price, line_total FROM sale_items WHERE sale_id = ? ORDER BY id',
-  )
-    .bind(id)
-    .all();
-  return ok(c, { ...sale, items: items.results });
+  return ok(c, await saleDetail(c, id));
 });
 
 // ── Create sale (atomic: stock deducted in same D1 batch as sale+items) ──
 const saleSelect = `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
-       s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at
+       s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at, s.tx_hash, s.seq
 FROM sales s JOIN events e ON e.id = s.event_id JOIN users u ON u.id = s.cashier_user_id`;
 
 async function saleDetail(c: Ctx, id: number) {
   const sale = await c.env.DB.prepare(`${saleSelect} WHERE s.id = ?`).bind(id).first();
   if (!sale) return null;
-  const items = await c.env.DB.prepare(
-    'SELECT id, sale_id, product_id, sku, name, qty, price, line_total FROM sale_items WHERE sale_id = ? ORDER BY id',
-  ).bind(id).all();
-  return { ...sale, items: items.results };
+  const [items, payments] = await Promise.all([
+    c.env.DB.prepare(
+      'SELECT id, sale_id, product_id, sku, name, qty, price, line_total FROM sale_items WHERE sale_id = ? ORDER BY id',
+    ).bind(id).all(),
+    c.env.DB.prepare('SELECT id, sale_id, method, amount, ref FROM sale_payments WHERE sale_id = ? ORDER BY id').bind(id).all(),
+  ]);
+  return { ...sale, items: items.results, payments: payments.results };
 }
 
 pos.post('/sales', async (c) => {
@@ -142,8 +141,17 @@ pos.post('/sales', async (c) => {
   const user = c.get('user');
   const eventId = Number(body?.event_id);
   const discount = Math.max(0, Number(body?.discount) || 0);
-  const paymentMethod: PaymentMethod = body?.payment_method === 'PromptPay' ? 'PromptPay' : 'Cash';
+  let paymentMethod: PaymentMethod = body?.payment_method === 'PromptPay' ? 'PromptPay' : 'Cash';
   const rawItems = Array.isArray(body?.items) ? body.items : [];
+  const rawPayments: { method: PaymentMethod; amount: number; ref: string | null }[] = Array.isArray(body?.payments)
+    ? body.payments
+        .map((p: { method?: unknown; amount?: unknown; ref?: unknown }) => ({
+          method: (p?.method === 'PromptPay' ? 'PromptPay' : 'Cash') as PaymentMethod,
+          amount: Math.round((Number(p?.amount) || 0) * 100) / 100,
+          ref: typeof p?.ref === 'string' ? p.ref.slice(0, 100) : null,
+        }))
+        .filter((p: { amount: number }) => p.amount > 0)
+    : [];
   const clientSaleId = typeof body?.client_sale_id === 'string' && body.client_sale_id.length > 0 && body.client_sale_id.length <= 100 ? body.client_sale_id : null;
 
   if (!Number.isInteger(eventId) || eventId <= 0) return badRequest(c, 'event_id ไม่ถูกต้อง');
@@ -186,6 +194,14 @@ pos.post('/sales', async (c) => {
   if (discount > subtotal) return badRequest(c, 'ส่วนลดมากกว่ายอดรวม');
   const total = Math.round((subtotal - discount) * 100) / 100;
 
+  // Split bill: the tenders must add up to the total, and the sale's single
+  // payment_method column records the largest one so existing reports still work.
+  if (rawPayments.length) {
+    const paid = Math.round(rawPayments.reduce((a, p) => a + p.amount, 0) * 100) / 100;
+    if (paid !== total) return badRequest(c, `ยอดชำระ (${paid}) ไม่เท่ากับยอดบิล (${total})`);
+    paymentMethod = rawPayments.reduce((a, p) => (p.amount > a.amount ? p : a)).method;
+  }
+
   // Insert sale first so we know its id.
   let saleId: number;
   try {
@@ -225,6 +241,12 @@ pos.post('/sales', async (c) => {
       ).bind(saleId, item.product_id, item.sku, item.name, item.qty, item.price, item.line_total),
     );
   }
+  for (const p of rawPayments) {
+    stmts.push(
+      c.env.DB.prepare("INSERT INTO sale_payments (sale_id, method, amount, ref, created_at) VALUES (?,?,?,?, datetime('now'))")
+        .bind(saleId, p.method, p.amount, p.ref),
+    );
+  }
 
   try {
     await c.env.DB.batch(stmts);
@@ -233,6 +255,14 @@ pos.post('/sales', async (c) => {
     const msg = e instanceof Error ? e.message : 'unknown';
     if (msg.includes('CHECK')) return fail(c, 'สินค้าในตะกร้ามีไม่เพียงพอ (สต็อกเปลี่ยนแปลง)', 409, 'INSUFFICIENT_STOCK');
     return fail(c, 'ไม่สามารถบันทึกการขายได้: ' + msg, 500, 'DB_ERROR');
+  }
+
+  // Seal onto the append-only ledger. A failure here must not fail the sale —
+  // the row stays unsealed and the next /ledger/rehash picks it up.
+  try {
+    await sealSale(c.env.DB, saleId);
+  } catch {
+    /* ignore — recoverable via rehash */
   }
 
   const created = await saleDetail(c, saleId);

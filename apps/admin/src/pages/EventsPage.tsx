@@ -65,10 +65,21 @@ export default function EventsPage() {
     }
   }
 
+  // Multiple events run concurrently, so opening one leaves the others open.
   async function activate(e: AdminEvent) {
-    if (!confirm(`เปิดขายกิจกรรม "${e.name}"? (กิจกรรมอื่นจะถูกปิด)`)) return;
+    if (!confirm(`เปิดขายกิจกรรม "${e.name}"?\nกิจกรรมอื่นที่เปิดอยู่จะยังคงเปิดขายต่อไป`)) return;
     try {
       await api.activateEvent(e.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : TH.error);
+    }
+  }
+
+  async function close(e: AdminEvent) {
+    if (!confirm(`ปิดการขายกิจกรรม "${e.name}"?\nแคชเชียร์จะไม่เห็นกิจกรรมนี้ในเครื่องขายอีกต่อไป`)) return;
+    try {
+      await api.closeEvent(e.id);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : TH.error);
@@ -120,7 +131,13 @@ export default function EventsPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-bold text-slate-800">{TH.events}</h1>
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">{TH.events}</h1>
+          <p className="text-sm text-slate-500">
+            เปิดขายพร้อมกันได้หลายกิจกรรม แคชเชียร์แต่ละคนเลือกกิจกรรมที่ตนปฏิบัติหน้าที่ในเครื่องขาย
+            {events && ` · เปิดขายอยู่ ${events.filter((e) => e.status === 'ACTIVE').length} กิจกรรม`}
+          </p>
+        </div>
         <button onClick={() => { setDraft(emptyDraft); setError(''); }} className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500">
           + {TH.add}
         </button>
@@ -178,9 +195,13 @@ export default function EventsPage() {
                 <button onClick={() => openAssign(e)} className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold hover:bg-slate-50">
                   {TH.assignProducts}
                 </button>
-                {e.status !== 'ACTIVE' && (
+                {e.status !== 'ACTIVE' ? (
                   <button onClick={() => activate(e)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500">
                     ▶ {TH.activate}
+                  </button>
+                ) : (
+                  <button onClick={() => close(e)} className="px-3 py-1.5 rounded-lg bg-slate-700 text-white text-xs font-semibold hover:bg-slate-600">
+                    ⏹ ปิดการขาย
                   </button>
                 )}
                 <button onClick={() => startEdit(e)} className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold hover:bg-slate-50">
