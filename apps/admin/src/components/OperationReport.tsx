@@ -85,7 +85,7 @@ export default function OperationReport({
                   )}
                 </div>
 
-                <div className="mt-4 grid grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-lg overflow-hidden">
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <Stat label={TH.eventCount} value={`${data.events.length} กิจกรรม`} />
                   <Stat label={TH.billCount} value={`${kpi?.orders_completed ?? 0} ใบ`} />
                   <Stat label={TH.avgBasket} value={`${fmtAmt(kpi?.avg_basket ?? 0)} บาท`} />
@@ -270,7 +270,7 @@ export default function OperationReport({
               </GovSection>
             )}
 
-            <div className="avoid-break mt-5 pt-2 border-t-2 border-slate-800 text-[10pt]">
+            <div className="report-note avoid-break mt-5 text-[10pt]">
               <strong>สถานะการปิดวัน:</strong>{' '}
               {data.zreport.closed
                 ? `${TH.dayClosed} — ยอดเงินสดที่คาดไว้ ${fmtAmt(data.zreport.cash_expected)} บาท · นับได้ ${
@@ -287,9 +287,9 @@ export default function OperationReport({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white px-2 py-2 text-center">
+    <div className="rounded-xl border border-slate-200 border-t-2 border-t-emerald-500 bg-white px-3 py-3 text-center">
       <div className="text-[8.5pt] text-slate-500 leading-tight">{label}</div>
-      <div className="text-[11pt] font-bold text-slate-800 leading-tight mt-0.5">{value}</div>
+      <div className="text-[12pt] font-bold text-slate-900 leading-tight mt-1 tabular-nums">{value}</div>
     </div>
   );
 }

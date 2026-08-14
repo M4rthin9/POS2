@@ -92,7 +92,7 @@ export default function ReportPage() {
         <div className="no-print mb-3 text-sm text-amber-700 bg-amber-50 rounded-xl px-4 py-2.5">⚠ {TH.reportTruncated}</div>
       )}
 
-      <PrintDoc>
+      <PrintDoc orientation="landscape">
         <GovDocHeader settings={s} title={TH.salesReportTitle} subtitle={TH.reportSubtitle} periodText={periodText} />
 
         {report === null ? (
@@ -136,7 +136,7 @@ export default function ReportPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-lg overflow-hidden">
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <Stat label={TH.eventCount} value={`${report.events.length} กิจกรรม`} />
                   <Stat label={TH.billCount} value={`${t?.count ?? 0} ใบ`} />
                   <Stat label={TH.itemCount} value={`${fmtQty(t?.item_qty ?? 0)} ชิ้น`} />
@@ -177,9 +177,10 @@ export default function ReportPage() {
                         <tr>
                           <th className="w-8">ที่</th>
                           <th className="w-16">เลขที่</th>
-                          <th className="w-28">วัน/เวลา</th>
+                          <th className="w-32">วัน/เวลา</th>
                           <th>{TH.name}</th>
                           <th className="w-12 text-right">{TH.qty}</th>
+                          <th className="w-20 text-right">{TH.unitPrice}</th>
                           <th className="w-20 text-right">{TH.lineTotal}</th>
                           <th className="w-24">ชำระ</th>
                         </tr>
@@ -191,12 +192,33 @@ export default function ReportPage() {
                             <td className="font-mono">#{String(sale.id).padStart(6, '0')}</td>
                             <td>{fmtDate(sale.created_at)}</td>
                             <td className="text-slate-700">
-                              {showItems ? sale.items.map((it) => `${fmtQty(it.qty)}× ${it.name}`).join(' · ') : `รวม ${sale.items.length} รายการ`}
+                              {showItems ? (
+                                <span className="block leading-snug">
+                                  {sale.items.map((it) => (
+                                    <span key={it.sku} className="block">
+                                      {fmtQty(it.qty)}× {it.name}
+                                    </span>
+                                  ))}
+                                </span>
+                              ) : (
+                                `รวม ${sale.items.length} รายการ`
+                              )}
                               {sale.discount > 0 && (
                                 <span className="text-slate-500"> · {TH.discount} {fmtAmt(sale.discount)}</span>
                               )}
                             </td>
                             <td className="text-right">{fmtQty(sale.item_qty)}</td>
+                            <td className="text-right text-slate-600">
+                              {showItems && (
+                                <span className="block leading-snug">
+                                  {sale.items.map((it) => (
+                                    <span key={it.sku} className="block whitespace-nowrap">
+                                      {fmtAmt(it.price)}
+                                    </span>
+                                  ))}
+                                </span>
+                              )}
+                            </td>
                             <td className="text-right font-semibold">{fmtAmt(sale.total)}</td>
                             <td className="whitespace-nowrap">
                               {sale.tenders.length > 1 ? (
@@ -220,6 +242,7 @@ export default function ReportPage() {
                             รวมกิจกรรม {ev.name} — {ev.totals.count} ใบเสร็จ · {TH.discount} {fmtAmt(ev.totals.discount)}
                           </td>
                           <td className="text-right font-bold">{fmtQty(ev.totals.item_qty)}</td>
+                          <td />
                           <td className="text-right font-bold">{fmtAmt(ev.totals.net)}</td>
                           <td className="text-center whitespace-nowrap px-3">
                             <span className="block text-[9pt] text-slate-500 leading-tight">{TH.cash}</span>
@@ -245,6 +268,7 @@ export default function ReportPage() {
                     <th>{TH.name}</th>
                     <th className="w-24">{TH.division}</th>
                     <th className="w-20 text-right">{TH.itemCount}</th>
+                    <th className="w-24 text-right">{TH.avgPrice}</th>
                     <th className="w-28 text-right">{TH.netAmount} (บาท)</th>
                     <th className="w-24 text-right">{TH.remaining}</th>
                   </tr>
@@ -257,6 +281,7 @@ export default function ReportPage() {
                       <td>{p.name}</td>
                       <td>{p.division_name}</td>
                       <td className="text-right">{fmtQty(p.qty)}</td>
+                      <td className="text-right">{p.qty > 0 ? fmtAmt(p.revenue / p.qty) : '—'}</td>
                       <td className="text-right">{fmtAmt(p.revenue)}</td>
                       <td className="text-right">
                         {p.stock_left === null ? 'ไม่จำกัด' : p.sold_out ? <strong>หมด</strong> : p.stock_left}
@@ -270,6 +295,7 @@ export default function ReportPage() {
                       {TH.totalAllEvents}
                     </td>
                     <td className="text-right font-bold">{fmtQty(t?.item_qty ?? 0)}</td>
+                    <td />
                     <td className="text-right font-bold">{fmtAmt(t?.net ?? 0)}</td>
                     <td />
                   </tr>
@@ -395,7 +421,7 @@ export default function ReportPage() {
             )}
 
             {/* Integrity statement */}
-            <div className="avoid-break mt-5 pt-2 border-t-2 border-slate-800 text-[10pt]">
+            <div className="report-note avoid-break mt-5 text-[10pt]">
               <strong>การรับรองความถูกต้องของข้อมูล:</strong>{' '}
               {report.chain.verified
                 ? `ระบบได้ตรวจสอบความต่อเนื่องของรหัสตรวจสอบ (hash chain) ของรายการจำหน่ายทั้งสิ้น ${report.chain.checked} รายการ ผลการตรวจสอบถูกต้องครบถ้วน ไม่พบการแก้ไขย้อนหลัง`
@@ -410,9 +436,9 @@ export default function ReportPage() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white px-2 py-2 text-center">
+    <div className="rounded-xl border border-slate-200 border-t-2 border-t-emerald-500 bg-white px-3 py-3 text-center">
       <div className="text-[8.5pt] text-slate-500 leading-tight">{label}</div>
-      <div className="text-[11pt] font-bold text-slate-800 leading-tight mt-0.5">{value}</div>
+      <div className="text-[12pt] font-bold text-slate-900 leading-tight mt-1 tabular-nums">{value}</div>
     </div>
   );
 }

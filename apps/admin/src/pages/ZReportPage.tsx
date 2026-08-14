@@ -123,30 +123,28 @@ export default function ZReportPage() {
             />
 
             <GovSection no={1} title={TH.financialSummary}>
-              <table className="gov-table">
-                <tbody>
-                  {lines.map((l) => (
-                    <tr key={l.label} className={l.strong ? 'border-t border-slate-300' : ''}>
-                      <td className={`py-1.5 ${l.strong ? 'font-semibold' : 'text-slate-600'}`}>{l.label}</td>
-                      <td className={`py-1.5 text-right tabular-nums ${l.strong ? 'font-semibold' : ''}`}>{l.value}</td>
-                    </tr>
-                  ))}
-                  <tr className="border-t border-slate-300">
-                    <td className="py-1.5 text-slate-600">{TH.cashExpected}</td>
-                    <td className="py-1.5 text-right tabular-nums font-semibold">{fmt(report?.cash_expected ?? 0)}</td>
-                  </tr>
-                  <tr>
-                    <td className="py-1.5 text-slate-600">{TH.cashCounted}</td>
-                    <td className="py-1.5 text-right tabular-nums font-semibold">{counted === '' ? '—' : fmt(Number(counted))}</td>
-                  </tr>
-                  <tr className="border-t-2 border-slate-800">
-                    <td className="py-2 font-bold">{TH.cashVariance}</td>
-                    <td className={`py-2 text-right tabular-nums font-bold ${!variance ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {variance === null ? '—' : `${fmt(variance)} ${variance === 0 ? '✓' : '⚠'}`}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <div className="summary-panel space-y-1.5">
+                {lines.map((l) => (
+                  <div key={l.label} className="flex items-baseline justify-between gap-6">
+                    <span className={`${l.strong ? 'font-semibold text-slate-900' : 'text-slate-600'}`}>{l.label}</span>
+                    <span className={`text-right tabular-nums ${l.strong ? 'font-bold text-slate-900' : ''}`}>{l.value}</span>
+                  </div>
+                ))}
+                <div className="flex items-baseline justify-between gap-6 pt-1.5 border-t border-slate-200">
+                  <span className="text-slate-600">{TH.cashExpected}</span>
+                  <span className="text-right tabular-nums font-semibold">{fmt(report?.cash_expected ?? 0)}</span>
+                </div>
+                <div className="flex items-baseline justify-between gap-6">
+                  <span className="text-slate-600">{TH.cashCounted}</span>
+                  <span className="text-right tabular-nums font-semibold">{counted === '' ? '—' : fmt(Number(counted))}</span>
+                </div>
+                <div className="flex items-baseline justify-between gap-6 pt-2 border-t-2 border-slate-800">
+                  <span className="font-bold">{TH.cashVariance}</span>
+                  <span className={`text-right tabular-nums font-bold ${!variance ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {variance === null ? '—' : `${fmt(variance)} ${variance === 0 ? '✓' : '⚠'}`}
+                  </span>
+                </div>
+              </div>
             </GovSection>
 
             <SignatureBlock />

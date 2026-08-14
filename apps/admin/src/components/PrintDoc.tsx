@@ -48,17 +48,21 @@ export function GovDocHeader({
 
   return (
     <header className="gov-header avoid-break">
-      <div className="flex items-start justify-between gap-4 mb-2">
+      <div className="border-t-[3px] border-emerald-600 mb-3" />
+      <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          {logo && <img src={logo} alt="" className="h-16 w-16 object-contain flex-none" />}
+          {logo && (
+            <div className="flex-none border border-slate-300 rounded-xl p-1.5 bg-white shadow-sm">
+              <img src={logo} alt="" className="h-14 w-14 object-contain" />
+            </div>
+          )}
           <div className="min-w-0 text-left">
-            <div className="font-bold text-[13pt] leading-tight">{settings.org_name || 'ทัณฑสถานบำบัดพิเศษกลาง'}</div>
-            {settings.org_subtitle && <div className="text-[10pt]">{settings.org_subtitle}</div>}
-            <div className="text-[10pt]">{TH.govDepartment}</div>
-            {settings.org_address && <div className="text-[9pt] text-slate-600">{settings.org_address}</div>}
+            <div className="font-bold text-[15pt] leading-tight text-slate-900">{settings.org_name || 'ทัณฑสถานบำบัดพิเศษกลาง'}</div>
+            {settings.org_subtitle && <div className="text-[10.5pt] text-slate-700 mt-0.5">{settings.org_subtitle}</div>}
+            {settings.org_address && <div className="text-[9pt] text-slate-600 mt-0.5">{settings.org_address}</div>}
           </div>
         </div>
-        <div className="text-right text-[9pt] text-slate-600 flex-none">
+        <div className="text-right text-[9pt] text-slate-600 flex-none tabular-nums leading-relaxed">
           {settings.tax_id && (
             <div>
               {TH.taxId} {settings.tax_id}
@@ -73,10 +77,10 @@ export function GovDocHeader({
         </div>
       </div>
 
-      <div className="text-center border-t-2 border-b-2 border-slate-900 py-2 my-2">
-        <h2 className="font-bold text-[15pt] leading-snug">{title}</h2>
-        {subtitle && <div className="text-[11pt]">{subtitle}</div>}
-        <div className="text-[11pt] mt-0.5">
+      <div className="text-center border-y-2 border-slate-900 bg-slate-50 py-2.5 my-3">
+        <h2 className="font-bold text-[16pt] leading-snug tracking-wide">{title}</h2>
+        {subtitle && <div className="text-[11pt] mt-0.5 text-slate-800">{subtitle}</div>}
+        <div className="text-[11pt] mt-1 text-slate-700">
           {TH.reportPeriod} {periodText}
         </div>
       </div>
@@ -98,8 +102,9 @@ export function GovSection({
 }) {
   return (
     <section className={`gov-section ${breakBefore ? 'page-break' : ''}`}>
-      <h3 className="font-bold text-[12pt] mb-1.5">
-        {no}. {title}
+      <h3 className="font-bold text-[12.5pt] mb-1.5 flex items-center gap-2">
+        <span className="gov-section-no">{no}</span>
+        <span>{title}</span>
       </h3>
       {children}
     </section>
