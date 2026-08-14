@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fmtDateOnly, TH, EVENT_STATUS_LABELS } from '@cida/shared';
 import { api, type AdminEvent, type AdminProduct } from '../lib/api';
 
@@ -115,6 +115,49 @@ export default function EventsPage() {
     });
   }
 
+  // Products grouped by category (division) so the cashier's booth can be set
+  // up for a whole division at once.
+  const groups = useMemo(() => {
+    const map = new Map<number | null, AdminProduct[]>();
+    for (const p of products) {
+      const key = p.division_id;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    }
+    return [...map.entries()].sort(([a], [b]) => {
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      const an = products.find((p) => p.division_id === a)?.division_name ?? '';
+      const bn = products.find((p) => p.division_id === b)?.division_name ?? '';
+      return an.localeCompare(bn, 'th');
+    });
+  }, [products]);
+
+  function groupName(key: number | null) {
+    if (key === null) return TH.noCategory;
+    return products.find((p) => p.division_id === key)?.division_name ?? TH.noCategory;
+  }
+
+  function toggleGroup(key: number | null) {
+    const ids = groups.find(([k]) => k === key)?.[1].map((p) => p.id) ?? [];
+    if (ids.length === 0) return;
+    const allOn = ids.every((id) => selected.has(id));
+    setSelected((s) => {
+      const n = new Set(s);
+      for (const id of ids) (allOn ? n.delete(id) : n.add(id));
+      return n;
+    });
+  }
+
+  function selectAllProducts() {
+    setSelected(new Set(products.map((p) => p.id)));
+  }
+
+  function clearAllProducts() {
+    setSelected(new Set());
+  }
+
   async function saveAssignment() {
     if (!assigning) return;
     setBusy(true);
@@ -220,18 +263,47 @@ export default function EventsPage() {
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setAssigning(null)}>
           <div className="bg-white rounded-2xl p-5 w-full max-w-lg max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <h2 className="font-bold text-slate-800 mb-1">{TH.assignProducts}: {assigning.name}</h2>
-            <p className="text-xs text-slate-500 mb-3">เลือกสินค้าที่จะขายในกิจกรรมนี้</p>
-            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+            <p className="text-xs text-slate-500 mb-3">เลือกสินค้าที่จะขายในกิจกรรมนี้ · เลือกทั้งหมวดหมู่เพื่อเพิ่มสินค้าทั้งแผนกได้ในครั้งเดียว</p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs text-slate-500">{TH.selected} {selected.size}</span>
+              <div className="flex gap-2">
+                <button onClick={selectAllProducts} className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500">
+                  {TH.selectAll}
+                </button>
+                <button onClick={clearAllProducts} className="px-3 py-1 rounded-lg border border-slate-300 text-xs font-semibold hover:bg-slate-50">
+                  {TH.selectNone}
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-lg">
               {products.length === 0 ? (
                 <p className="p-4 text-sm text-slate-400">{TH.noData}</p>
               ) : (
-                products.map((p) => (
-                  <label key={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
-                    <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleProduct(p.id)} className="w-4 h-4" />
-                    <span className="text-sm flex-1">{p.name}</span>
-                    <span className="text-xs text-slate-400 font-mono">{p.sku}</span>
-                  </label>
-                ))
+                groups.map(([key, items]) => {
+                  const allOn = items.every((p) => selected.has(p.id));
+                  const count = items.filter((p) => selected.has(p.id)).length;
+                  return (
+                    <div key={key ?? 'none'}>
+                      <div className="flex items-center gap-3 px-3 py-2 bg-slate-50 border-b border-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={allOn}
+                          onChange={() => toggleGroup(key)}
+                          className="w-4 h-4 accent-emerald-600"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 flex-1">{groupName(key)}</span>
+                        <span className="text-[11px] text-slate-400 tabular-nums">{count}/{items.length}</span>
+                      </div>
+                      {items.map((p) => (
+                        <label key={p.id} className="flex items-center gap-3 px-3 py-2 border-b border-slate-100 hover:bg-slate-50 cursor-pointer">
+                          <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleProduct(p.id)} className="w-4 h-4" />
+                          <span className="text-sm flex-1">{p.name}</span>
+                          <span className="text-xs text-slate-400 font-mono">{p.sku}</span>
+                        </label>
+                      ))}
+                    </div>
+                  );
+                })
               )}
             </div>
             <div className="flex gap-3 mt-4">

@@ -151,7 +151,7 @@ export default function ReportPage() {
                 <p className="text-slate-500">{TH.noSalesInPeriod}</p>
               ) : (
                 report.events.map((ev, evIdx) => (
-                  <div key={ev.id} className={`avoid-break ${evIdx > 0 ? 'mt-5' : ''}`}>
+                  <div key={ev.id} className={evIdx > 0 ? 'mt-5' : ''}>
                     <div className="event-strip">
                       <div className="min-w-0">
                         <div className="font-bold text-[11pt] leading-tight text-slate-900">
@@ -176,10 +176,10 @@ export default function ReportPage() {
                         <tr>
                           <th className="w-8">ที่</th>
                           <th className="w-16">เลขที่</th>
-                          <th className="w-20">วัน/เวลา</th>
+                          <th className="w-28">วัน/เวลา</th>
                           <th>{TH.name}</th>
-                          <th className="w-10 text-right">{TH.qty}</th>
-                          <th className="w-16 text-right">{TH.lineTotal}</th>
+                          <th className="w-12 text-right">{TH.qty}</th>
+                          <th className="w-20 text-right">{TH.lineTotal}</th>
                           <th className="w-24">ชำระ</th>
                         </tr>
                       </thead>

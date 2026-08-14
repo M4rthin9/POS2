@@ -11,14 +11,12 @@ import DivisionsPage from './pages/DivisionsPage';
 import SalesPage from './pages/SalesPage';
 import SettingsPage from './pages/SettingsPage';
 import ReportPage from './pages/ReportPage';
-import AuditPage from './pages/AuditPage';
 import ZReportPage from './pages/ZReportPage';
 
 const NAV = [
   { to: '/', label: TH.dashboard, icon: '📊', end: true },
   { to: '/report', label: TH.salesReport, icon: '🧾' },
   { to: '/zreport', label: TH.zReport, icon: '📋' },
-  { to: '/audit', label: TH.auditLog, icon: '🗒️' },
   { to: '/products', label: TH.products, icon: '📦' },
   { to: '/events', label: TH.events, icon: '🎪' },
   { to: '/divisions', label: TH.divisions, icon: '🗂️' },
@@ -85,7 +83,6 @@ function Layout() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/report" element={<ReportPage />} />
             <Route path="/zreport" element={<ZReportPage />} />
-            <Route path="/audit" element={<AuditPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/users" element={<UsersPage />} />

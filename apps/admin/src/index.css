@@ -35,7 +35,7 @@ body {
   font-family: 'Sarabun', 'Noto Sans Thai', ui-sans-serif, sans-serif;
   color: #0f172a;
   background: #fff;
-  padding: 14mm 12mm;
+  padding: 16mm 15mm;
   margin: 0 auto;
   max-width: 210mm;
   box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
@@ -46,6 +46,9 @@ body {
 
 .gov-section {
   margin-top: 1.1rem;
+  /* A section heading must never be stranded at the bottom of a page while its
+     table starts on the next one. */
+  break-inside: auto;
 }
 
 .gov-table {
@@ -76,18 +79,18 @@ body {
    The header stays the formal bordered block; everything below it now uses
    light rule tables, soft panels and an emerald accent for money figures. */
 .gov-section h3 {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-  padding-bottom: 0.2rem;
-  border-bottom: 1px solid #cbd5e1;
+  font-weight: 700;
+  margin-bottom: 0.45rem;
 }
 
 .report-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 10pt;
+  /* Fixed layout keeps every column exactly where it is across pages and
+     keeps the table inside the A4 width — auto layout can reflow and widen. */
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
 }
 .report-table th {
   text-align: center;
@@ -103,9 +106,14 @@ body {
   padding: 3px 6px;
   vertical-align: middle;
   border-bottom: 1px solid #e2e8f0;
+  /* Long SKUs / receipt hashes must wrap, never push the column wide. */
+  overflow-wrap: anywhere;
 }
 .report-table tbody tr:nth-child(even) {
   background: #f8fafc;
+}
+.report-table tbody tr:last-child td {
+  border-bottom: none;
 }
 .report-table tfoot td {
   border-top: 1.5px solid #334155;
@@ -131,6 +139,8 @@ body {
   padding: 6px 10px;
   margin-bottom: 6px;
   break-inside: avoid;
+  /* The strip must stay with the first rows of its table. */
+  break-after: avoid;
 }
 
 @media print {
@@ -176,7 +186,7 @@ body {
 
   @page {
     size: A4 portrait;
-    margin: 12mm;
+    margin: 16mm 15mm;
   }
   /* Wide ledger tables opt into landscape via <PrintDoc orientation="landscape">.
      @page cannot be nested in a selector, so this uses a named page instead;
@@ -204,6 +214,9 @@ body {
   }
   .gov-header {
     margin-bottom: 0.5rem;
+    /* Never print the formal header alone at the foot of a page. */
+    break-after: avoid;
+    page-break-after: avoid;
   }
   /* The approval block belongs at the very end, never orphaned on its own page. */
   .gov-signatures {
@@ -211,17 +224,20 @@ body {
     page-break-inside: avoid;
   }
 
-  /* Repeat table headers on every page and never split a row. */
+  /* Repeat column headers on every page. Total rows are NOT repeated — a
+     government report states its totals once, at the end of each table. */
   thead {
     display: table-header-group;
-  }
-  tfoot {
-    display: table-footer-group;
   }
   tr,
   .avoid-break {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+  .gov-section h3,
+  .gov-section h3:first-child {
+    break-after: avoid;
+    page-break-after: avoid;
   }
   .page-break {
     break-before: page;
@@ -247,15 +263,21 @@ body {
   #report-print .report-table td {
     border: none;
     border-bottom: 1px solid #e2e8f0;
+    /* Fixed column widths only hold if nothing forces a cell wider. */
+    overflow-wrap: anywhere;
   }
   #report-print .report-table th {
     border-bottom: 1.5px solid #334155;
     background: #f8fafc !important;
+    white-space: normal;
   }
   #report-print .report-table tfoot td {
     border-top: 1.5px solid #334155;
     border-bottom: none;
     background: #f1f5f9 !important;
+  }
+  #report-print .report-table tbody tr:last-child td {
+    border-bottom: none;
   }
   #report-print .report-table tbody tr:nth-child(even) {
     background: #f8fafc;
@@ -272,6 +294,26 @@ body {
   #report-print [class*='max-h-'] {
     overflow: visible !important;
     max-height: none !important;
+  }
+
+  /* Dashboard report viewer overlay: on paper the overlay chrome must collapse
+     so the absolute #report-print anchors to the page top and paginates. */
+  .report-overlay {
+    position: static !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  .report-overlay-panel {
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .report-overlay-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+    padding: 0 !important;
+    background: #fff !important;
   }
 }
 
