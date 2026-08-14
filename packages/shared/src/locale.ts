@@ -164,7 +164,7 @@ export const TH = {
   // ── Formal government report ──
   salesReport: 'รายงานการขาย',
   salesReportTitle: 'รายงานผลการจำหน่ายสินค้าผลิตภัณฑ์ผู้ต้องขัง',
-  reportSubtitle: 'จำแนกตามกิจกรรม รายการสินค้า และแผนก',
+  reportSubtitle: 'จำแนกตามกิจกรรมและรายการสินค้า',
   govDepartment: 'กรมราชทัณฑ์ กระทรวงยุติธรรม',
   reportNo: 'เลขที่รายงาน',
   reportPeriod: 'ประจำระหว่างวันที่',

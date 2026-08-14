@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { SalesReport } from '@cida/shared';
 import { PAYMENT_LABELS, SALE_STATUS_LABELS, TH, fmtAmt, fmtDate, fmtQty, fmtThaiLong, shortHash } from '@cida/shared';
 import { api, type AdminEvent } from '../lib/api';
@@ -98,14 +98,18 @@ export default function ReportPage() {
             <GovSection no={1} title={TH.reportOverview}>
               <table className="gov-table">
                 <tbody>
-                  <Row label={TH.eventCount} value={`${report.events.length} กิจกรรม`} />
-                  <Row label={TH.billCount} value={`${t?.count ?? 0} ใบ`} />
-                  <Row label={TH.itemCount} value={`${fmtQty(t?.item_qty ?? 0)} ชิ้น`} />
-                  <Row label={TH.grossSales} value={`${fmtAmt(t?.gross ?? 0)} บาท`} />
-                  <Row label={TH.totalDiscount} value={`${fmtAmt(t?.discount ?? 0)} บาท`} />
-                  <Row label={TH.netRevenue} value={`${fmtAmt(t?.net ?? 0)} บาท`} strong />
-                  <Row label={`${TH.netRevenue} — ${TH.cash}`} value={`${fmtAmt(t?.cash ?? 0)} บาท`} />
-                  <Row label={`${TH.netRevenue} — ${TH.promptpay}`} value={`${fmtAmt(t?.promptpay ?? 0)} บาท`} />
+                  <tr>
+                    <Metric label={TH.eventCount} value={`${report.events.length} กิจกรรม`} />
+                    <Metric label={TH.billCount} value={`${t?.count ?? 0} ใบ`} />
+                    <Metric label={TH.itemCount} value={`${fmtQty(t?.item_qty ?? 0)} ชิ้น`} />
+                    <Metric label={TH.netRevenue} value={`${fmtAmt(t?.net ?? 0)} บาท`} strong />
+                  </tr>
+                  <tr>
+                    <Metric label={TH.grossSales} value={`${fmtAmt(t?.gross ?? 0)} บาท`} />
+                    <Metric label={TH.totalDiscount} value={`${fmtAmt(t?.discount ?? 0)} บาท`} />
+                    <Metric label={TH.cash} value={`${fmtAmt(t?.cash ?? 0)} บาท`} />
+                    <Metric label={TH.promptpay} value={`${fmtAmt(t?.promptpay ?? 0)} บาท`} />
+                  </tr>
                 </tbody>
               </table>
               <p className="text-[10pt] text-slate-600 mt-2">{TH.attachmentNote}</p>
@@ -135,158 +139,52 @@ export default function ReportPage() {
                           <th className="w-20">วัน/เวลา</th>
                           <th>{TH.name}</th>
                           <th className="w-10 text-right">{TH.qty}</th>
-                          <th className="w-14 text-right">ราคา/<wbr />หน่วย</th>
                           <th className="w-16 text-right">{TH.lineTotal}</th>
-                          <th className="w-16">{TH.cashier}</th>
-                          <th className="w-14">ชำระ</th>
+                          <th className="w-20">ชำระ</th>
                         </tr>
                       </thead>
                       <tbody>
                         {ev.sales.map((sale, i) => (
-                          <Fragment key={sale.id}>
-                            <tr className="bg-slate-50/60">
-                              <td className="text-center">{i + 1}</td>
-                              <td className="font-mono">#{String(sale.id).padStart(6, '0')}</td>
-                              <td>{fmtDate(sale.created_at)}</td>
-                              <td className="text-slate-600">
-                                {showItems ? `รวม ${sale.items.length} รายการ` : sale.items.map((it) => it.name).join(', ')}
-                                {sale.discount > 0 && (
-                                  <span className="text-slate-500"> · {TH.discount} {fmtAmt(sale.discount)}</span>
-                                )}
-                              </td>
-                              <td className="text-right">{fmtQty(sale.item_qty)}</td>
-                              <td />
-                              <td className="text-right font-semibold">{fmtAmt(sale.total)}</td>
-                              <td>{sale.cashier_name}</td>
-                              <td>
-                                {sale.tenders.length > 1
-                                  ? sale.tenders.map((x) => `${PAYMENT_LABELS[x.method] ?? x.method} ${fmtAmt(x.amount)}`).join(' + ')
-                                  : PAYMENT_LABELS[sale.payment_method] ?? sale.payment_method}
-                              </td>
-                            </tr>
-                            {showItems &&
-                              sale.items.map((it, j) => (
-                                <tr key={`${sale.id}-${j}`} className="text-slate-700">
-                                  <td />
-                                  <td />
-                                  <td />
-                                  <td className="pl-6">
-                                    <span className="text-slate-400 font-mono text-[9pt]">{it.sku}</span> {it.name}
-                                    <span className="text-slate-400"> · {it.division_name}</span>
-                                  </td>
-                                  <td className="text-right">{fmtQty(it.qty)}</td>
-                                  <td className="text-right">{fmtAmt(it.price)}</td>
-                                  <td className="text-right">{fmtAmt(it.line_total)}</td>
-                                  <td />
-                                  <td />
-                                </tr>
-                              ))}
-                          </Fragment>
+                          <tr key={sale.id}>
+                            <td className="text-center">{i + 1}</td>
+                            <td className="font-mono">#{String(sale.id).padStart(6, '0')}</td>
+                            <td>{fmtDate(sale.created_at)}</td>
+                            <td className="text-slate-700">
+                              {showItems ? sale.items.map((it) => `${fmtQty(it.qty)}× ${it.name}`).join(' · ') : `รวม ${sale.items.length} รายการ`}
+                              {sale.discount > 0 && (
+                                <span className="text-slate-500"> · {TH.discount} {fmtAmt(sale.discount)}</span>
+                              )}
+                            </td>
+                            <td className="text-right">{fmtQty(sale.item_qty)}</td>
+                            <td className="text-right font-semibold">{fmtAmt(sale.total)}</td>
+                            <td>
+                              {sale.tenders.length > 1
+                                ? sale.tenders.map((x) => `${PAYMENT_LABELS[x.method] ?? x.method} ${fmtAmt(x.amount)}`).join(' + ')
+                                : PAYMENT_LABELS[sale.payment_method] ?? sale.payment_method}
+                            </td>
+                          </tr>
                         ))}
                       </tbody>
                       <tfoot>
                         <tr>
                           <td colSpan={4} className="text-right font-bold">
-                            รวมกิจกรรม {ev.name} ({ev.totals.count} ใบเสร็จ · {TH.discount} {fmtAmt(ev.totals.discount)})
+                            รวมกิจกรรม {ev.name} — {ev.totals.count} ใบเสร็จ · {TH.discount} {fmtAmt(ev.totals.discount)}
                           </td>
                           <td className="text-right font-bold">{fmtQty(ev.totals.item_qty)}</td>
-                          <td />
                           <td className="text-right font-bold">{fmtAmt(ev.totals.net)}</td>
-                          <td colSpan={2} className="text-slate-600">
+                          <td className="text-slate-600">
                             {TH.cash} {fmtAmt(ev.totals.cash)} · {TH.promptpay} {fmtAmt(ev.totals.promptpay)}
                           </td>
                         </tr>
                       </tfoot>
                     </table>
-
-                    {/* Per-event category split and who worked the booth */}
-                    <div className="grid grid-cols-2 gap-4 mt-2">
-                      <table className="gov-table">
-                        <thead>
-                          <tr>
-                            <th colSpan={3}>สรุปตามแผนก — {ev.name}</th>
-                          </tr>
-                          <tr>
-                            <th>{TH.division}</th>
-                            <th className="w-16 text-right">{TH.itemCount}</th>
-                            <th className="w-24 text-right">{TH.netAmount}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {ev.category_summary.map((c) => (
-                            <tr key={c.division_name}>
-                              <td>{c.division_name}</td>
-                              <td className="text-right">{fmtQty(c.qty)}</td>
-                              <td className="text-right">{fmtAmt(c.revenue)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <table className="gov-table">
-                        <thead>
-                          <tr>
-                            <th colSpan={3}>ผู้ปฏิบัติหน้าที่จำหน่าย</th>
-                          </tr>
-                          <tr>
-                            <th>{TH.cashier}</th>
-                            <th className="w-16 text-right">{TH.billCount}</th>
-                            <th className="w-24 text-right">{TH.netAmount}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {ev.cashiers.map((u) => (
-                            <tr key={u.user_id}>
-                              <td>{u.display_name}</td>
-                              <td className="text-right">{u.count}</td>
-                              <td className="text-right">{fmtAmt(u.net)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
                   </div>
                 ))
               )}
             </GovSection>
 
-            {/* ── 3. Category summary (final pages) ── */}
-            <GovSection no={3} title={TH.reportCategorySummary} breakBefore>
-              <table className="gov-table">
-                <thead>
-                  <tr>
-                    <th className="w-12">{TH.sequence}</th>
-                    <th>{TH.division}</th>
-                    <th className="w-24 text-right">{TH.itemCount}</th>
-                    <th className="w-32 text-right">{TH.netAmount} (บาท)</th>
-                    <th className="w-20 text-right">{TH.share}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.category_summary.map((c, i) => (
-                    <tr key={c.division_name}>
-                      <td className="text-center">{i + 1}</td>
-                      <td>{c.division_name}</td>
-                      <td className="text-right">{fmtQty(c.qty)}</td>
-                      <td className="text-right">{fmtAmt(c.revenue)}</td>
-                      <td className="text-right">{c.share.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={2} className="text-right font-bold">
-                      {TH.totalAllEvents}
-                    </td>
-                    <td className="text-right font-bold">{fmtQty(t?.item_qty ?? 0)}</td>
-                    <td className="text-right font-bold">{fmtAmt(t?.net ?? 0)}</td>
-                    <td className="text-right font-bold">100.0%</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </GovSection>
-
-            {/* ── 4. Product summary ── */}
-            <GovSection no={4} title={TH.reportProductSummary}>
+            {/* ── 3. Product summary ── */}
+            <GovSection no={3} title={TH.reportProductSummary}>
               <table className="gov-table">
                 <thead>
                   <tr>
@@ -355,8 +253,8 @@ export default function ReportPage() {
               )}
             </GovSection>
 
-            {/* ── 5. PromptPay trace for the finance office ── */}
-            <GovSection no={5} title={TH.reportPromptPayTrace} breakBefore>
+            {/* ── 4. PromptPay trace for the finance office ── */}
+            <GovSection no={4} title={TH.reportPromptPayTrace} breakBefore>
               <p className="text-[10pt] text-slate-700 mb-2">{TH.promptPayTraceNote}</p>
               <table className="gov-table">
                 <thead>
@@ -407,7 +305,7 @@ export default function ReportPage() {
 
             {/* ── 6. Reversed sales ── */}
             {report.reversed.length > 0 && (
-              <GovSection no={6} title={TH.reportReversed}>
+              <GovSection no={5} title={TH.reportReversed}>
                 <table className="gov-table">
                   <thead>
                     <tr>
@@ -458,11 +356,11 @@ export default function ReportPage() {
   );
 }
 
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <tr>
-      <td className={`w-72 ${strong ? 'font-bold' : ''}`}>{label}</td>
-      <td className={`text-right ${strong ? 'font-bold' : ''}`}>{value}</td>
-    </tr>
+    <td className="px-2 py-1">
+      <span className="block text-[9pt] text-slate-500 leading-tight">{label}</span>
+      <span className={`text-[11pt] leading-tight ${strong ? 'font-bold' : 'font-semibold'}`}>{value}</span>
+    </td>
   );
 }
