@@ -4,6 +4,7 @@ import { TH, fmt, fmtDate, fmtDateOnly, shortHash, toISODate } from '@cida/share
 import { api, type AdminEvent, type AdminUser } from '../lib/api';
 import { Badge, Button, Card, EmptyRow, ErrorBar, Table } from '../components/ui';
 import { PrintDoc, GovDocHeader, GovSection, SignatureBlock } from '../components/PrintDoc';
+import { printNode } from '../lib/print';
 
 /**
  * X-report (mid-day, read-only) and Z-report (day close, locks the figures).
@@ -103,7 +104,7 @@ export default function ZReportPage() {
               <option key={u.id} value={u.id}>{u.display_name}</option>
             ))}
           </select>
-          <Button variant="primary" onClick={() => window.print()}>🖨 {TH.print}</Button>
+          <Button variant="primary" onClick={() => printNode(document.getElementById('report-print'))}>🖨 {TH.print}</Button>
         </div>
       </div>
 

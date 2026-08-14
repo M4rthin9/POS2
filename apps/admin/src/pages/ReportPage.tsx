@@ -6,6 +6,7 @@ import { periodRange } from '../lib/period';
 import PeriodPicker, { type PeriodState } from '../components/PeriodPicker';
 import { Button, ErrorBar } from '../components/ui';
 import { GovDocHeader, GovSection, PrintDoc } from '../components/PrintDoc';
+import { printNode } from '../lib/print';
 
 /**
  * The single formal document handed to the Commander. Structure follows the
@@ -80,7 +81,7 @@ export default function ReportPage() {
             <input type="checkbox" checked={showItems} onChange={(e) => setShowItems(e.target.checked)} className="w-3.5 h-3.5 accent-emerald-600" />
             แสดงรายการสินค้าในแต่ละใบเสร็จ
           </label>
-          <Button variant="primary" onClick={() => window.print()}>
+          <Button variant="primary" onClick={() => printNode(document.getElementById('report-print'))}>
             🖨 {TH.print}
           </Button>
         </PeriodPicker>
@@ -118,7 +119,7 @@ export default function ReportPage() {
                       <>
                         <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100 border border-slate-200">
                           <div className="h-full bg-emerald-600" style={{ width: `${cashShare}%` }} />
-                          <div className="h-full bg-slate-300" style={{ width: `${ppShare}%` }} />
+                          <div className="h-full bg-sky-500" style={{ width: `${ppShare}%` }} />
                         </div>
                         <div className="flex justify-between gap-6 mt-2 text-[9pt]">
                           <span className="flex items-center gap-1.5 text-slate-600">
@@ -126,7 +127,7 @@ export default function ReportPage() {
                             {TH.cash} <strong className="text-slate-800">{fmtAmt(t?.cash ?? 0)}</strong>
                           </span>
                           <span className="flex items-center gap-1.5 text-slate-600">
-                            <span className="h-2 w-2 rounded-full bg-slate-300" />
+                            <span className="h-2 w-2 rounded-full bg-sky-500" />
                             {TH.promptpay} <strong className="text-slate-800">{fmtAmt(t?.promptpay ?? 0)}</strong>
                           </span>
                         </div>

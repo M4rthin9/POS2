@@ -1,6 +1,7 @@
 import type { DashboardPayload } from '@cida/shared';
 import { PAYMENT_LABELS, SALE_STATUS_LABELS, TH, fmtAmt, fmtDate, fmtThaiLong } from '@cida/shared';
 import { GovDocHeader, GovSection, PrintDoc } from './PrintDoc';
+import { printNode } from '../lib/print';
 
 /**
  * On-screen viewer for the operations report. The dashboard no longer prints a
@@ -35,7 +36,7 @@ export default function OperationReport({
           <h3 className="font-bold text-slate-800 text-sm sm:text-base">{TH.salesReportTitle}</h3>
           <div className="flex gap-2">
             <button
-              onClick={() => window.print()}
+              onClick={() => printNode(document.getElementById('report-print'))}
               className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 transition"
             >
               🖨 {TH.print}
@@ -68,7 +69,7 @@ export default function OperationReport({
                     <div className="flex-1 max-w-xs min-w-56">
                       <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100 border border-slate-200">
                         <div className="h-full bg-emerald-600" style={{ width: `${cashShare}%` }} />
-                        <div className="h-full bg-slate-300" style={{ width: `${ppShare}%` }} />
+                        <div className="h-full bg-sky-500" style={{ width: `${ppShare}%` }} />
                       </div>
                       <div className="flex justify-between gap-6 mt-2 text-[9pt]">
                         <span className="flex items-center gap-1.5 text-slate-600">
@@ -76,7 +77,7 @@ export default function OperationReport({
                           {TH.cash} <strong className="text-slate-800">{fmtAmt(kpi?.cash_total ?? 0)}</strong>
                         </span>
                         <span className="flex items-center gap-1.5 text-slate-600">
-                          <span className="h-2 w-2 rounded-full bg-slate-300" />
+                          <span className="h-2 w-2 rounded-full bg-sky-500" />
                           {TH.promptpay} <strong className="text-slate-800">{fmtAmt(kpi?.promptpay_total ?? 0)}</strong>
                         </span>
                       </div>

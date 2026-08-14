@@ -9,6 +9,7 @@ import { getHeld, holdCart, releaseHeld, type HeldCart } from '../store/held';
 import PromptPayModal from '../components/PromptPayModal';
 import SplitBillModal, { type SplitPayment } from '../components/SplitBillModal';
 import { Receipt } from '../components/Receipt';
+import { printNode } from '../lib/print';
 
 export default function SalesPage() {
   const navigate = useNavigate();
@@ -150,7 +151,9 @@ export default function SalesPage() {
   }
 
   function printReceipt() {
-    window.print();
+    // Print only the receipt, not the whole app behind the modal — the preview
+    // shows up much faster this way.
+    printNode(receiptRef.current, { skipWebFonts: true });
   }
 
   // ── Hold / retrieve cart ──

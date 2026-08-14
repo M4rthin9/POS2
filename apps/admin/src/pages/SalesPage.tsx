@@ -7,6 +7,7 @@ import { useAuth } from '../store/auth';
 import { Badge, Button, Card, EmptyRow, ErrorBar, Modal, Table } from '../components/ui';
 import SaleDetail from '../components/SaleDetail';
 import { GovDocHeader, GovSection, PrintDoc } from '../components/PrintDoc';
+import { printNode } from '../lib/print';
 
 const STATUS_TONE: Record<string, string> = { COMPLETED: 'emerald', VOID: 'slate', REFUNDED: 'amber' };
 const PRINT_CAP = 3000;
@@ -120,7 +121,7 @@ export default function SalesPage() {
         <div className="text-sm text-slate-600">
           {TH.netRevenue}: <span className="font-bold text-emerald-600">{fmt(total)}</span> ({sales?.length ?? 0} {TH.records})
         </div>
-        <Button variant="primary" disabled={!sales || sales.length === 0} onClick={() => window.print()}>
+        <Button variant="primary" disabled={!sales || sales.length === 0} onClick={() => printNode(document.getElementById('report-print'))}>
           🖨 {TH.print}
         </Button>
       </div>
@@ -200,7 +201,7 @@ export default function SalesPage() {
                       {TH.cash} <strong className="text-slate-800">{fmtAmt(cash)}</strong>
                     </span>
                     <span className="flex items-center gap-1.5 text-slate-600">
-                      <span className="h-2 w-2 rounded-full bg-slate-300" />
+                      <span className="h-2 w-2 rounded-full bg-sky-500" />
                       {TH.promptpay} <strong className="text-slate-800">{fmtAmt(promptpay)}</strong>
                     </span>
                   </div>
