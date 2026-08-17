@@ -167,6 +167,7 @@ export const TH = {
   chainBroken: 'พบความผิดปกติของบัญชี',
   showHashes: 'แสดงรหัสตรวจสอบ',
   preparedBy: 'ผู้จัดทำรายงาน',
+  reporterRole: 'เจ้าหน้าที่ผู้จัดทำรายงาน',
   checkedBy: 'ผู้ตรวจสอบ',
   approvedBy: 'ผู้อนุมัติ',
   commander: 'ผู้บัญชาการทัณฑสถานบำบัดพิเศษกลาง',

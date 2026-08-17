@@ -112,6 +112,34 @@ export function GovSection({
 }
 
 /**
+ * Reporter's signature, sitting at the bottom left of the last page. Print-only.
+ *
+ * The three-column SignatureBlock below is the approval chain for a document
+ * routed to the Commander; the sales report only needs the officer who produced
+ * it to sign, so this is a single box rather than a row.
+ *
+ * `name` pre-prints the signer inside the parentheses when known (the account
+ * that generated the report); it falls back to a blank rule to be filled by hand.
+ */
+export function ReporterSignature({ name }: { name?: string | null }) {
+  return (
+    <div className="print-only avoid-break gov-signatures reporter-sign">
+      <div className="reporter-sign__card">
+        <span className="reporter-sign__chip">{TH.preparedBy}</span>
+        <div className="reporter-sign__space" />
+        <div className="reporter-sign__line">
+          <span className="reporter-sign__lead">{TH.signature}</span>
+          <span className="reporter-sign__rule" />
+        </div>
+        <div className="reporter-sign__name">( {name?.trim() || '............................................'} )</div>
+        <div className="reporter-sign__role">{TH.reporterRole}</div>
+        <div className="reporter-sign__date">วันที่ ......... / ......... / .........</div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Approval chain. Print-only — on screen these blank rules are noise.
  * The right-hand column is the Commander, who signs last.
  */

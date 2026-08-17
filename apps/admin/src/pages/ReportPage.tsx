@@ -5,8 +5,9 @@ import { api, type AdminEvent } from '../lib/api';
 import { periodRange } from '../lib/period';
 import PeriodPicker, { type PeriodState } from '../components/PeriodPicker';
 import { Button, ErrorBar } from '../components/ui';
-import { GovDocHeader, GovSection, PrintDoc } from '../components/PrintDoc';
+import { GovDocHeader, GovSection, PrintDoc, ReporterSignature } from '../components/PrintDoc';
 import { printNode } from '../lib/print';
+import { useAuth } from '../store/auth';
 
 /**
  * The single formal document handed to the Commander. Structure follows the
@@ -14,6 +15,7 @@ import { printNode } from '../lib/print';
  * product summary → PromptPay trace list for the finance office → signatures.
  */
 export default function ReportPage() {
+  const user = useAuth((s) => s.user);
   const [range, setRange] = useState<PeriodState>({ period: 'today', from: '', to: '' });
   const [eventFilter, setEventFilter] = useState('');
   const [events, setEvents] = useState<AdminEvent[]>([]);
@@ -427,6 +429,8 @@ export default function ReportPage() {
                 ? `ระบบได้ตรวจสอบความต่อเนื่องของรหัสตรวจสอบ (hash chain) ของรายการจำหน่ายทั้งสิ้น ${report.chain.checked} รายการ ผลการตรวจสอบถูกต้องครบถ้วน ไม่พบการแก้ไขย้อนหลัง`
                 : `พบความผิดปกติของรหัสตรวจสอบที่ใบเสร็จเลขที่ #${report.chain.broken_at} กรุณาตรวจสอบก่อนนำเสนอ`}
             </div>
+
+            <ReporterSignature name={user?.display_name} />
           </>
         )}
       </PrintDoc>

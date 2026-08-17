@@ -110,6 +110,15 @@ body {
   /* Long SKUs / receipt hashes must wrap, never push the column wide. */
   overflow-wrap: anywhere;
 }
+/* …but never inside a figure. Breaking anywhere splits an amount such as
+   1,111,104.00 after the comma or the dot and drops ".00" onto its own line.
+   Amount cells are the right-aligned ones; the right-aligned cells that carry a
+   colspan are the wrapping labels in tfoot, so they keep the anywhere-break. */
+.report-table td.text-right:not([colspan]) {
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+}
 .report-table tbody tr:nth-child(even) {
   background: #f8fafc;
 }
@@ -176,6 +185,74 @@ html[data-print-orientation='landscape'] .gov-doc {
   break-inside: avoid;
   /* The strip must stay with the first rows of its table. */
   break-after: avoid;
+}
+
+/* ── Reporter signature box ──
+   Bottom left of the last page of the sales report. Sized in mm so it holds its
+   proportions on paper; the emerald left rule and the label chip match the
+   accents used by the section headers and the summary panel. */
+.reporter-sign {
+  margin-top: 12mm;
+}
+.reporter-sign__card {
+  width: 78mm;
+  padding: 6mm 6mm 4mm;
+  border: 0.3mm solid #cbd5e1;
+  border-left: 1.2mm solid #10b981;
+  border-radius: 3mm;
+  background: #fff;
+}
+.reporter-sign__chip {
+  display: inline-block;
+  font-size: 9pt;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #047857;
+  background: #ecfdf5;
+  border: 0.2mm solid #a7f3d0;
+  border-radius: 9999px;
+  padding: 0.6mm 3mm;
+}
+/* Blank space to actually sign in. */
+.reporter-sign__space {
+  height: 15mm;
+}
+.reporter-sign__line {
+  display: flex;
+  align-items: flex-end;
+  gap: 2mm;
+}
+.reporter-sign__lead {
+  font-size: 10pt;
+  color: #0f172a;
+  white-space: nowrap;
+}
+.reporter-sign__rule {
+  flex: 1 1 auto;
+  border-bottom: 0.25mm dotted #0f172a;
+  height: 0.25mm;
+}
+/* Indented by the width of the "ลงชื่อ" lead plus its gap, so the name and
+   position centre under the signature rule rather than under the whole card. */
+.reporter-sign__name,
+.reporter-sign__role,
+.reporter-sign__date {
+  text-align: center;
+  padding-left: 10mm;
+}
+.reporter-sign__name {
+  font-size: 10pt;
+  margin-top: 2mm;
+}
+.reporter-sign__role {
+  font-size: 9pt;
+  color: #475569;
+  margin-top: 0.5mm;
+}
+.reporter-sign__date {
+  font-size: 9pt;
+  color: #334155;
+  margin-top: 3mm;
 }
 
 /* ── Price tags / barcode labels ──
@@ -603,6 +680,13 @@ html[data-print-orientation='landscape'] .gov-doc {
     border-bottom: 1px solid #e2e8f0;
     /* Fixed column widths only hold if nothing forces a cell wider. */
     overflow-wrap: anywhere;
+  }
+  /* Amounts stay on one line — see the note on the screen rule above. This
+     repeats here because the print rule is id-scoped and would otherwise win. */
+  #report-print .report-table td.text-right:not([colspan]) {
+    overflow-wrap: normal;
+    word-break: keep-all;
+    white-space: nowrap;
   }
   #report-print .report-table th {
     border-bottom: 1.5px solid #334155;
