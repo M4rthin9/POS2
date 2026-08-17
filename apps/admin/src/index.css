@@ -534,7 +534,7 @@ html[data-print-orientation='landscape'] .gov-doc {
 }
 
 /* ── QR payment tags (80 × 60 mm) ──
-   Large QR code centred as the dominant element. */
+   Two-column middle: QR code left, character right. */
 .qr-tag {
   position: relative;
   width: var(--tag-w);
@@ -555,28 +555,27 @@ html[data-print-orientation='landscape'] .gov-doc {
   inset: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2.5mm 3mm 2mm;
+  padding: 2mm 3mm 2mm;
   clip-path: inset(0 round 3mm);
   font-family: 'Noto Sans Thai', ui-sans-serif, sans-serif;
   color: #0f172a;
 }
+/* Header: logo + product name, centred */
 .qr-tag__head {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.8mm;
-  width: 100%;
+  gap: 0.5mm;
+  flex: 0 0 auto;
+  padding-bottom: 1.5mm;
 }
 .qr-tag__logo {
   height: 5mm;
   width: auto;
   object-fit: contain;
-  flex: 0 0 auto;
 }
 .qr-tag__name {
-  font-size: 3mm;
+  font-size: 2.8mm;
   font-weight: 700;
   text-align: center;
   line-height: 1.15;
@@ -586,23 +585,43 @@ html[data-print-orientation='landscape'] .gov-doc {
   overflow: hidden;
   max-width: 100%;
 }
-.qr-tag__qr {
+/* Middle: QR code left, character right */
+.qr-tag__mid {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  line-height: 0;
+  gap: 2mm;
   min-height: 0;
 }
-.qr-tag__qr svg {
-  width: var(--qr-size, 36mm);
-  height: var(--qr-size, 36mm);
+.qr-tag__qr {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
 }
+.qr-tag__qr svg {
+  width: var(--qr-size, 33mm);
+  height: var(--qr-size, 33mm);
+}
+.qr-tag__character {
+  flex: 0 0 auto;
+  height: 100%;
+  max-height: 38mm;
+  width: auto;
+  object-fit: contain;
+  object-position: bottom center;
+}
+/* Footer: price + scan hint */
 .qr-tag__foot {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5mm;
+  gap: 0.4mm;
+  padding-top: 1mm;
+  border-top: 0.3mm solid #10b981;
 }
 .qr-tag__price {
   font-size: 5mm;
