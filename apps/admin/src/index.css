@@ -606,15 +606,6 @@ html[data-print-orientation='landscape'] .gov-doc {
   width: var(--qr-size, 29mm);
   height: var(--qr-size, 29mm);
 }
-.qr-tag__foot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4mm;
-  width: 100%;
-  border-top: 0.3mm solid #10b981;
-  padding-top: 1mm;
-}
 .qr-tag__price {
   font-size: 4.5mm;
   font-weight: 800;
@@ -626,13 +617,22 @@ html[data-print-orientation='landscape'] .gov-doc {
   color: #64748b;
   line-height: 1;
 }
-/* Right column: character figure, full height */
+/* Right column: character figure, full tag height */
 .qr-tag__character {
   flex: 0 0 auto;
   width: 18mm;
   height: 100%;
   object-fit: contain;
   object-position: bottom center;
+}
+.qr-tag__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4mm;
+  width: 100%;
+  border-top: 0.2mm solid #10b981;
+  padding-top: 0.8mm;
 }
 
 @media print {
