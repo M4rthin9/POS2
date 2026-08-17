@@ -268,6 +268,15 @@ export const TH = {
   noTagsSelected: 'ยังไม่ได้เลือกสินค้า',
   barcodeTooDense: 'บาร์โค้ดแคบเกินไป อาจสแกนไม่ติด — ใช้ป้ายขนาดใหญ่ขึ้น',
   tagPrintHint: 'ในหน้าต่างพิมพ์: ปิด "หัวกระดาษและท้ายกระดาษ" และตั้งขนาดเป็น 100% (ห้ามย่อให้พอดีหน้า) มิฉะนั้นบาร์โค้ดจะสแกนไม่ติด',
+
+  // ── QR payment tags ──
+  qrPaymentTags: 'ป้าย QR ชำระเงิน',
+  printQrTags: 'พิมพ์ป้าย QR',
+  qrTagsSelected: 'ป้าย QR ที่เลือก',
+  qrTagHint: 'ป้าย QR ชำระเงิน ขนาด 8 × 6 ซม. ใช้ PromptPay ID จากการตั้งค่าระบบ',
+  noPromptPayId: 'ยังไม่ได้ตั้งค่า PromptPay ID — กรุณาตั้งค่าก่อนพิมพ์ป้าย QR',
+  qrPayment: 'ชำระเงินผ่าน QR',
+  scanToPay: 'สแกนเพื่อชำระเงิน',
 } as const;
 
 export const PAYMENT_LABELS: Record<string, string> = {

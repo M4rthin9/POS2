@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProductsPage from './pages/ProductsPage';
 import PriceTagsPage from './pages/PriceTagsPage';
+import QRTagsPage from './pages/QRTagsPage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
 import DivisionsPage from './pages/DivisionsPage';
@@ -20,6 +21,7 @@ const NAV = [
   { to: '/zreport', label: TH.zReport, icon: '📋' },
   { to: '/products', label: TH.products, icon: '📦' },
   { to: '/price-tags', label: TH.priceTags, icon: '🏷️' },
+  { to: '/qr-tags', label: TH.qrPaymentTags, icon: '📱' },
   { to: '/events', label: TH.events, icon: '🎪' },
   { to: '/divisions', label: TH.divisions, icon: '🗂️' },
   { to: '/users', label: TH.users, icon: '👥' },
@@ -87,6 +89,7 @@ function Layout() {
             <Route path="/zreport" element={<ZReportPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/price-tags" element={<PriceTagsPage />} />
+            <Route path="/qr-tags" element={<QRTagsPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/divisions" element={<DivisionsPage />} />

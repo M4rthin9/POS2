@@ -1,6 +1,7 @@
 import type { AdminProduct } from '../lib/api';
 import { PriceTag } from './PriceTag';
 import { LStandSign } from './LStandSign';
+import { QRPaymentTag } from './QRPaymentTag';
 import { perSheet, type TagLayout } from './tagLayouts';
 
 /**
@@ -10,7 +11,7 @@ import { perSheet, type TagLayout } from './tagLayouts';
  * Pages are chunked explicitly rather than left to grid fragmentation, so the
  * break lands between rows on every engine.
  */
-export function PriceTagSheet({ tags, layout, logoUrl }: { tags: AdminProduct[]; layout: TagLayout; logoUrl?: string | null }) {
+export function PriceTagSheet({ tags, layout, logoUrl, promptpayId }: { tags: AdminProduct[]; layout: TagLayout; logoUrl?: string | null; promptpayId?: string }) {
   const size = perSheet(layout);
   const pages: AdminProduct[][] = [];
   for (let i = 0; i < tags.length; i += size) pages.push(tags.slice(i, i + size));
@@ -28,7 +29,9 @@ export function PriceTagSheet({ tags, layout, logoUrl }: { tags: AdminProduct[];
           }}
         >
           {page.map((p, i) =>
-            layout.kind === 'lstand' ? (
+            layout.kind === 'qr' ? (
+              <QRPaymentTag key={`${p.id}-${i}`} product={p} layout={layout} promptpayId={promptpayId ?? ''} logoUrl={logoUrl} />
+            ) : layout.kind === 'lstand' ? (
               <LStandSign key={`${p.id}-${i}`} product={p} layout={layout} logoUrl={logoUrl} />
             ) : (
               <PriceTag key={`${p.id}-${i}`} product={p} layout={layout} logoUrl={logoUrl} />

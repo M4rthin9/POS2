@@ -524,6 +524,69 @@ html[data-print-orientation='landscape'] .gov-doc {
   justify-content: center;
 }
 
+/* ── QR payment tags (80 × 60 mm) ──
+   Fixed-size QR code centred between product name and price. */
+.qr-tag {
+  position: relative;
+  width: var(--tag-w);
+  height: var(--tag-h);
+  overflow: hidden;
+}
+.qr-tag__cut {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: #fff;
+  stroke: #0f172a;
+  stroke-width: 0.3;
+}
+.qr-tag__body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3mm;
+  clip-path: inset(0 round 3mm);
+  font-family: 'Noto Sans Thai', ui-sans-serif, sans-serif;
+  color: #0f172a;
+  gap: 1.5mm;
+}
+.qr-tag__logo {
+  height: 6mm;
+  width: auto;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+.qr-tag__name {
+  font-size: 3.2mm;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+}
+.qr-tag__qr {
+  flex: 0 0 auto;
+  line-height: 0;
+}
+.qr-tag__price {
+  font-size: 5.5mm;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.qr-tag__hint {
+  font-size: 2mm;
+  color: #64748b;
+  line-height: 1;
+}
+
 @media print {
   /* Isolation: hide the whole app, then reveal only the report subtree. Same
      approach as the POS receipt (apps/pos/src/index.css) — more reliable than
@@ -572,7 +635,8 @@ html[data-print-orientation='landscape'] .gov-doc {
     page-break-after: auto;
   }
   .price-tag,
-  .sign {
+  .sign,
+  .qr-tag {
     break-inside: avoid;
     page-break-inside: avoid;
   }
