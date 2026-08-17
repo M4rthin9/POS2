@@ -1,6 +1,7 @@
 import { fmt } from '@cida/shared';
 import type { AdminProduct } from '../lib/api';
 import { MASCOT_PNG } from '../assets/mascot';
+import { CHARACTER_PNG } from '../assets/character';
 import { Barcode, MIN_MODULE_MM, moduleWidthMm } from './Barcode';
 import type { TagLayout } from './tagLayouts';
 
@@ -73,6 +74,7 @@ export function PriceTag({ product, layout, logoUrl }: { product: AdminProduct; 
 
         {/* Data URI, not a CSS background: print engines drop background images. */}
         <img className="price-tag__mascot" src={MASCOT_PNG} alt="" />
+        <img className="price-tag__character" src={CHARACTER_PNG} alt="" />
       </div>
 
       {dense && <span className="tag-warn no-print" title={`${moduleWidthMm(product.sku, codeWidthMm).toFixed(2)} มม./แท่ง`}>!</span>}

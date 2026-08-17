@@ -324,6 +324,15 @@ html[data-print-orientation='landscape'] .gov-doc {
   object-position: bottom center;
   margin-left: calc(1.5mm * var(--tag-scale));
 }
+.price-tag__character {
+  flex: 0 0 auto;
+  align-self: stretch;
+  height: 85%;
+  width: auto;
+  object-fit: contain;
+  object-position: bottom center;
+  margin-left: calc(0.8mm * var(--tag-scale));
+}
 .price-tag__org {
   height: calc(4.2mm * var(--tag-scale));
   width: auto;
@@ -525,7 +534,7 @@ html[data-print-orientation='landscape'] .gov-doc {
 }
 
 /* ── QR payment tags (80 × 60 mm) ──
-   Fixed-size QR code centred between product name and price. */
+   Large QR code centred as the dominant element. */
 .qr-tag {
   position: relative;
   width: var(--tag-w);
@@ -547,21 +556,27 @@ html[data-print-orientation='landscape'] .gov-doc {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 3mm;
+  justify-content: space-between;
+  padding: 2.5mm 3mm 2mm;
   clip-path: inset(0 round 3mm);
   font-family: 'Noto Sans Thai', ui-sans-serif, sans-serif;
   color: #0f172a;
-  gap: 1.5mm;
+}
+.qr-tag__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8mm;
+  width: 100%;
 }
 .qr-tag__logo {
-  height: 6mm;
+  height: 5mm;
   width: auto;
   object-fit: contain;
   flex: 0 0 auto;
 }
 .qr-tag__name {
-  font-size: 3.2mm;
+  font-size: 3mm;
   font-weight: 700;
   text-align: center;
   line-height: 1.15;
@@ -572,11 +587,25 @@ html[data-print-orientation='landscape'] .gov-doc {
   max-width: 100%;
 }
 .qr-tag__qr {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   line-height: 0;
+  min-height: 0;
+}
+.qr-tag__qr svg {
+  width: var(--qr-size, 36mm);
+  height: var(--qr-size, 36mm);
+}
+.qr-tag__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5mm;
 }
 .qr-tag__price {
-  font-size: 5.5mm;
+  font-size: 5mm;
   font-weight: 800;
   line-height: 1.1;
   white-space: nowrap;
