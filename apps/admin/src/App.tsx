@@ -5,6 +5,7 @@ import { TH } from '@cida/shared';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProductsPage from './pages/ProductsPage';
+import PriceTagsPage from './pages/PriceTagsPage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
 import DivisionsPage from './pages/DivisionsPage';
@@ -18,6 +19,7 @@ const NAV = [
   { to: '/report', label: TH.salesReport, icon: '🧾' },
   { to: '/zreport', label: TH.zReport, icon: '📋' },
   { to: '/products', label: TH.products, icon: '📦' },
+  { to: '/price-tags', label: TH.priceTags, icon: '🏷️' },
   { to: '/events', label: TH.events, icon: '🎪' },
   { to: '/divisions', label: TH.divisions, icon: '🗂️' },
   { to: '/users', label: TH.users, icon: '👥' },
@@ -84,6 +86,7 @@ function Layout() {
             <Route path="/report" element={<ReportPage />} />
             <Route path="/zreport" element={<ZReportPage />} />
             <Route path="/products" element={<ProductsPage />} />
+            <Route path="/price-tags" element={<PriceTagsPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/divisions" element={<DivisionsPage />} />

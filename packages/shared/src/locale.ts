@@ -252,6 +252,21 @@ export const TH = {
   splitRemaining: 'ยังขาดอีก',
   splitExceeds: 'ยอดชำระเกินยอดบิล',
   addPayment: 'เพิ่มการชำระ',
+
+  // ── Price tags / barcode labels ──
+  priceTags: 'ป้ายราคา',
+  printTags: 'พิมพ์ป้ายราคา',
+  tagLayout: 'ขนาดป้าย',
+  stickerTags: 'สติกเกอร์ติดสินค้า (มีบาร์โค้ด)',
+  standSigns: 'ป้ายตั้งอะคริลิก (ไม่มีบาร์โค้ด)',
+  copies: 'จำนวนดวง',
+  clearSelection: 'ล้างที่เลือก',
+  tagsSelected: 'ป้ายที่เลือก',
+  tagsPerSheet: 'ดวง/แผ่น',
+  sheets: 'แผ่น',
+  noTagsSelected: 'ยังไม่ได้เลือกสินค้า',
+  barcodeTooDense: 'บาร์โค้ดแคบเกินไป อาจสแกนไม่ติด — ใช้ป้ายขนาดใหญ่ขึ้น',
+  tagPrintHint: 'ในหน้าต่างพิมพ์: ปิด "หัวกระดาษและท้ายกระดาษ" และตั้งขนาดเป็น 100% (ห้ามย่อให้พอดีหน้า) มิฉะนั้นบาร์โค้ดจะสแกนไม่ติด',
 } as const;
 
 export const PAYMENT_LABELS: Record<string, string> = {

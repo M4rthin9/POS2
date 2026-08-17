@@ -12,12 +12,14 @@
   },
   "dependencies": {
     "@cida/shared": "1.0.0",
+    "jsbarcode": "^3.11.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@types/jsbarcode": "^3.11.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

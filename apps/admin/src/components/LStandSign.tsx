@@ -1,0 +1,44 @@
+import { fmt } from '@cida/shared';
+import type { AdminProduct } from '../lib/api';
+import { MASCOT_PNG } from '../assets/mascot';
+import type { TagLayout } from './tagLayouts';
+
+const CORNER = 3; // mm
+const INSET = 0.15; // mm — half the stroke, so the outline is not clipped
+
+/**
+ * Stand-up sign: the insert for an acrylic holder. No barcode, no punch hole,
+ * no notches — it slides into a stand rather than hanging off a product.
+ *
+ * One component serves both presets. A5 portrait stacks; the 60 × 40 acrylic
+ * base card runs two columns, because the stacked layout would leave the name
+ * at ~3mm and the mascot unreadable at that size.
+ */
+export function LStandSign({ product, layout, logoUrl }: { product: AdminProduct; layout: TagLayout; logoUrl?: string | null }) {
+  const { w, h } = layout;
+  const land = w > h;
+  // Type scales off the short edge so both presets share one stylesheet.
+  const scale = land ? h / 40 : h / 210;
+
+  return (
+    <div
+      className={`sign ${land ? 'sign--land' : 'sign--port'}`}
+      style={{ ['--sign-w' as string]: `${w}mm`, ['--sign-h' as string]: `${h}mm`, ['--sign-scale' as string]: String(scale) }}
+    >
+      {/* The outline is the trim line — same contract as the sticker cut path. */}
+      <svg className="sign__cut" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+        <rect x={INSET} y={INSET} width={w - INSET * 2} height={h - INSET * 2} rx={CORNER} ry={CORNER} />
+      </svg>
+
+      <div className="sign__body">
+        <div className="sign__main">
+          {logoUrl && <img className="sign__org" src={logoUrl} alt="" />}
+          <div className="sign__name">{product.name}</div>
+          <div className="sign__rule" />
+          <div className="sign__price">{fmt(product.price)}</div>
+        </div>
+        <img className="sign__mascot" src={MASCOT_PNG} alt="" />
+      </div>
+    </div>
+  );
+}

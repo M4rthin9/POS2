@@ -178,6 +178,275 @@ html[data-print-orientation='landscape'] .gov-doc {
   break-after: avoid;
 }
 
+/* ── Price tags / barcode labels ──
+   Everything is sized in mm so the on-screen preview is the same object that
+   comes out of the printer. Per-tag values arrive as --tag-w / --tag-h / --tag-scale
+   from the layout preset (apps/admin/src/components/tagLayouts.ts). */
+.tag-sheet {
+  display: grid;
+  grid-template-columns: repeat(var(--tag-cols), var(--tag-w));
+  grid-auto-rows: var(--tag-h);
+  justify-content: start;
+  background: #fff;
+  width: max-content;
+}
+/* Sheets stack on screen with a gap; on paper each starts its own page. */
+.tag-print > .tag-sheet + .tag-sheet {
+  margin-top: 6mm;
+}
+
+.price-tag {
+  position: relative;
+  width: var(--tag-w);
+  height: var(--tag-h);
+  overflow: hidden;
+}
+.price-tag__cut {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: #fff;
+  stroke: #0f172a;
+  /* The viewBox is in mm, so this is a 0.3mm cut line at any zoom or DPI. */
+  stroke-width: 0.3;
+}
+.price-tag__cut circle {
+  fill: none;
+}
+.price-tag__body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: calc(2.6mm * var(--tag-scale)) calc(4mm * var(--tag-scale));
+  /* Keep text out of the rounded corners and the side notches. */
+  clip-path: inset(0 round calc(3mm * var(--tag-scale)));
+  font-family: 'Noto Sans Thai', ui-sans-serif, sans-serif;
+  color: #0f172a;
+}
+/* Main column and mascot column sit side by side inside the tag body. */
+.price-tag__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+/* Height-driven, width auto: the figure fills the tag's full inner height and
+   its own aspect ratio decides the column width, so no dead space is left
+   beside it on any preset. The barcode column takes whatever remains — keep
+   `codeW` in tagLayouts.ts in step with this. */
+.price-tag__mascot {
+  flex: 0 0 auto;
+  align-self: stretch;
+  height: 100%;
+  width: auto;
+  object-fit: contain;
+  object-position: bottom center;
+  margin-left: calc(1.5mm * var(--tag-scale));
+}
+.price-tag__org {
+  height: calc(4.2mm * var(--tag-scale));
+  width: auto;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+.price-tag__head {
+  /* Clears the punched hole in the top-left corner. */
+  padding-left: calc(5mm * var(--tag-scale));
+  min-width: 0;
+}
+.price-tag__name {
+  font-size: calc(3.4mm * var(--tag-scale));
+  line-height: 1.15;
+  font-weight: 700;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.price-tag__sub {
+  display: flex;
+  align-items: center;
+  gap: calc(1mm * var(--tag-scale));
+  font-size: calc(2.1mm * var(--tag-scale));
+  line-height: 1.2;
+  color: #475569;
+  border-top: 0.2mm solid #10b981;
+  margin-top: calc(0.6mm * var(--tag-scale));
+  padding-top: calc(0.4mm * var(--tag-scale));
+}
+.price-tag__division {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.price-tag__code {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.price-tag__sku {
+  font-family: ui-monospace, 'Courier New', monospace;
+  font-size: calc(2mm * var(--tag-scale));
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-align: center;
+  margin-top: calc(0.5mm * var(--tag-scale));
+}
+.price-tag__price {
+  font-size: calc(6.2mm * var(--tag-scale));
+  line-height: 1.1;
+  font-weight: 800;
+  white-space: nowrap;
+  margin-top: calc(0.8mm * var(--tag-scale));
+}
+/* ── Stand-up signs (acrylic base 60×40, L-stand A5) ──
+   Same mm-true construction as the tags; type scales off --sign-scale so both
+   presets share these rules. */
+.tag-sheet--lstand {
+  justify-content: center;
+}
+.sign {
+  position: relative;
+  width: var(--sign-w);
+  height: var(--sign-h);
+  overflow: hidden;
+}
+.sign__cut {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: #fff;
+  stroke: #0f172a;
+  stroke-width: 0.3;
+}
+.sign__body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  padding: calc(3.5mm * var(--sign-scale));
+  clip-path: inset(0 round calc(3mm * var(--sign-scale)));
+  font-family: 'Noto Sans Thai', ui-sans-serif, sans-serif;
+  color: #0f172a;
+}
+.sign__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.sign__org {
+  object-fit: contain;
+  width: auto;
+  flex: 0 0 auto;
+}
+.sign__name {
+  font-weight: 700;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sign__rule {
+  border-top: 0.3mm solid #10b981;
+}
+.sign__price {
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+.sign__mascot {
+  flex: 0 0 auto;
+  object-fit: contain;
+  object-position: bottom center;
+}
+
+/* Acrylic base card, 60 × 40 landscape: two columns, price is the anchor. */
+.sign--land .sign__body {
+  flex-direction: row;
+  align-items: stretch;
+  gap: calc(2mm * var(--sign-scale));
+}
+.sign--land .sign__main {
+  justify-content: center;
+  align-items: flex-start;
+}
+.sign--land .sign__org {
+  height: calc(4mm * var(--sign-scale));
+  margin-bottom: calc(1mm * var(--sign-scale));
+}
+.sign--land .sign__name {
+  font-size: calc(4mm * var(--sign-scale));
+  line-height: 1.15;
+  -webkit-line-clamp: 2;
+}
+.sign--land .sign__rule {
+  margin: calc(1.4mm * var(--sign-scale)) 0;
+  width: calc(12mm * var(--sign-scale));
+}
+.sign--land .sign__price {
+  font-size: calc(9mm * var(--sign-scale));
+}
+.sign--land .sign__mascot {
+  width: calc(14mm * var(--sign-scale));
+  align-self: flex-end;
+  height: calc(32mm * var(--sign-scale));
+}
+
+/* L-stand A5 portrait: stacked and centred, readable across a booth. */
+.sign--port .sign__body {
+  flex-direction: column;
+  align-items: stretch;
+  padding: calc(14mm * var(--sign-scale)) calc(12mm * var(--sign-scale));
+}
+.sign--port .sign__main {
+  align-items: center;
+  text-align: center;
+  justify-content: flex-start;
+}
+.sign--port .sign__org {
+  height: calc(14mm * var(--sign-scale));
+  margin-bottom: calc(8mm * var(--sign-scale));
+}
+.sign--port .sign__name {
+  font-size: calc(11mm * var(--sign-scale));
+  line-height: 1.2;
+  -webkit-line-clamp: 3;
+}
+.sign--port .sign__rule {
+  width: calc(30mm * var(--sign-scale));
+  margin: calc(8mm * var(--sign-scale)) 0;
+}
+.sign--port .sign__price {
+  font-size: calc(28mm * var(--sign-scale));
+}
+.sign--port .sign__mascot {
+  width: calc(45mm * var(--sign-scale));
+  height: calc(70mm * var(--sign-scale));
+  align-self: flex-end;
+  margin-top: auto;
+}
+
+/* Screen-only flag: this SKU's bars are too narrow to scan at this tag size. */
+.tag-warn {
+  position: absolute;
+  top: 1mm;
+  right: 1mm;
+  width: 4mm;
+  height: 4mm;
+  border-radius: 9999px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 2.6mm;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 @media print {
   /* Isolation: hide the whole app, then reveal only the report subtree. Same
      approach as the POS receipt (apps/pos/src/index.css) — more reliable than
@@ -195,6 +464,40 @@ html[data-print-orientation='landscape'] .gov-doc {
     top: 0;
     width: 100%;
     display: block;
+  }
+
+  /* Price-tag sheets are a second printable root with the same contract. */
+  #tag-print,
+  #tag-print * {
+    visibility: visible;
+  }
+  #tag-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: block;
+    /* The default @page carries the 16/15mm government-report margins; sticker
+       stock needs its own, and @page cannot be nested in a selector — so this
+       uses the same named-page mechanism as landscape-doc above. */
+    page: tag-sheet;
+  }
+  @page tag-sheet {
+    size: A4 portrait;
+    margin: 5mm;
+  }
+  #tag-print > .tag-sheet {
+    margin: 0;
+    break-after: page;
+    page-break-after: always;
+  }
+  #tag-print > .tag-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  .price-tag,
+  .sign {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .no-print,
