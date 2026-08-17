@@ -200,7 +200,7 @@ export default function SalesPage() {
       {/* Header */}
       <header className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-3 md:px-4 py-2.5 flex items-center justify-between gap-2 shadow-lg z-10">
         <div className="flex items-center gap-2.5 min-w-0">
-          <img src="/icon-192.svg" alt="" className="w-9 h-9 rounded-lg bg-white/10 p-1" />
+          <img src="https://dashboard.cafe.dpdns.org/cida-logo.png" alt="" className="w-9 h-9 rounded-lg bg-white/10 p-1" />
           <div className="min-w-0">
             <div className="font-bold leading-tight truncate">{settings.org_name || TH.appName}</div>
             <div className="text-[11px] text-slate-300 truncate">
