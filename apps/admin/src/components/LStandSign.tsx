@@ -6,6 +6,18 @@ import type { TagLayout } from './tagLayouts';
 const CORNER = 3; // mm
 const INSET = 0.15; // mm — half the stroke, so the outline is not clipped
 
+function priceFontSize(price: number, land: boolean): number {
+  const len = fmt(price).length;
+  if (land) {
+    if (len <= 10) return 9;
+    if (len <= 12) return 7.5;
+    return 6;
+  }
+  if (len <= 10) return 28;
+  if (len <= 12) return 22;
+  return 18;
+}
+
 /**
  * Stand-up sign: the insert for an acrylic holder. No barcode, no punch hole,
  * no notches — it slides into a stand rather than hanging off a product.
@@ -23,6 +35,7 @@ export function LStandSign({ product, layout, logoUrl, dark }: { product: AdminP
   const land = w > h;
   // Type scales off the short edge so both presets share one stylesheet.
   const scale = land ? h / 40 : h / 210;
+  const pSize = priceFontSize(product.price, land);
 
   return (
     <div
@@ -36,10 +49,10 @@ export function LStandSign({ product, layout, logoUrl, dark }: { product: AdminP
 
       <div className="sign__body">
         <div className="sign__main">
-          {logoUrl && <img className="sign__org" src={logoUrl} alt="" />}
+          {!land && logoUrl && <img className="sign__org" src={logoUrl} alt="" />}
           <div className="sign__name">{product.name}</div>
           <div className="sign__rule" />
-          <div className="sign__price">{fmt(product.price)}</div>
+          <div className="sign__price" style={{ fontSize: `${pSize * scale}mm` }}>{fmt(product.price)}</div>
         </div>
         <img className="sign__mascot" src={MASCOT_PNG} alt="" />
       </div>

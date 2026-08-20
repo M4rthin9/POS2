@@ -536,7 +536,7 @@ html[data-print-orientation='landscape'] .gov-doc {
   border-top-color: #34d399;
 }
 .sign--dark .sign__price {
-  color: #fbbf24;
+  color: #ffffff;
 }
 /* A dark logo would vanish on black; lift it onto its own light chip. */
 .sign--dark .sign__org {
