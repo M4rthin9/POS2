@@ -516,6 +516,35 @@ html[data-print-orientation='landscape'] .gov-doc {
   margin-top: auto;
 }
 
+/* ── Dark finish for the stand signs (acrylic 60 × 40, L-stand A5) ──
+   Black ground, everything else in colour: name in white, price in amber, rule
+   in emerald, mascot untouched. Only paint changes — geometry, trim size and
+   the grid stay exactly as the light card, so the same cut marks work.
+   The @media print block already forces print-color-adjust: exact, but the user
+   must still enable "background graphics" in the print dialog. */
+.sign--dark .sign__cut {
+  fill: #0b0f16;
+  stroke: #334155;
+}
+.sign--dark .sign__body {
+  color: #f8fafc;
+}
+.sign--dark .sign__name {
+  color: #ffffff;
+}
+.sign--dark .sign__rule {
+  border-top-color: #34d399;
+}
+.sign--dark .sign__price {
+  color: #fbbf24;
+}
+/* A dark logo would vanish on black; lift it onto its own light chip. */
+.sign--dark .sign__org {
+  background: #ffffff;
+  border-radius: 1mm;
+  padding: 0.6mm;
+}
+
 /* Screen-only flag: this SKU's bars are too narrow to scan at this tag size. */
 .tag-warn {
   position: absolute;

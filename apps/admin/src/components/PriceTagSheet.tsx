@@ -11,7 +11,7 @@ import { perSheet, type TagLayout } from './tagLayouts';
  * Pages are chunked explicitly rather than left to grid fragmentation, so the
  * break lands between rows on every engine.
  */
-export function PriceTagSheet({ tags, layout, logoUrl, promptpayId }: { tags: AdminProduct[]; layout: TagLayout; logoUrl?: string | null; promptpayId?: string }) {
+export function PriceTagSheet({ tags, layout, logoUrl, promptpayId, dark }: { tags: AdminProduct[]; layout: TagLayout; logoUrl?: string | null; promptpayId?: string; dark?: boolean }) {
   const size = perSheet(layout);
   const pages: AdminProduct[][] = [];
   for (let i = 0; i < tags.length; i += size) pages.push(tags.slice(i, i + size));
@@ -32,7 +32,7 @@ export function PriceTagSheet({ tags, layout, logoUrl, promptpayId }: { tags: Ad
             layout.kind === 'qr' ? (
               <QRPaymentTag key={`${p.id}-${i}`} product={p} layout={layout} promptpayId={promptpayId ?? ''} logoUrl={logoUrl} />
             ) : layout.kind === 'lstand' ? (
-              <LStandSign key={`${p.id}-${i}`} product={p} layout={layout} logoUrl={logoUrl} />
+              <LStandSign key={`${p.id}-${i}`} product={p} layout={layout} logoUrl={logoUrl} dark={dark} />
             ) : (
               <PriceTag key={`${p.id}-${i}`} product={p} layout={layout} logoUrl={logoUrl} />
             ),

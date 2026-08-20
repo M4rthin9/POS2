@@ -14,8 +14,13 @@ export default function PriceTagsPage() {
   const [q, setQ] = useState('');
   const [copies, setCopies] = useState<Record<number, number>>({});
   const [layoutId, setLayoutId] = useState(TAG_LAYOUTS[0].id);
+  const [dark, setDark] = useState(false);
 
   const layout = TAG_LAYOUTS.find((l) => l.id === layoutId) ?? TAG_LAYOUTS[0];
+  // Dark ground is a stand-sign finish only — stickers are scanned, and a black
+  // label kills barcode contrast.
+  const darkable = layout.kind === 'lstand';
+  const isDark = darkable && dark;
 
   async function load() {
     setProducts(null);
@@ -95,6 +100,12 @@ export default function PriceTagsPage() {
               ))}
             </optgroup>
           </select>
+          {darkable && (
+            <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer" title={TH.darkTagHint}>
+              <input type="checkbox" checked={dark} onChange={(e) => setDark(e.target.checked)} className="accent-slate-800" />
+              {TH.darkTag}
+            </label>
+          )}
           <Button variant="dark" onClick={printTags} disabled={!tags.length}>
             🖨️ {TH.printTags}
           </Button>
@@ -172,11 +183,12 @@ export default function PriceTagsPage() {
           action={<span className="text-xs text-slate-500">{sheets} {TH.sheets} · {perSheet(layout)} {TH.tagsPerSheet}</span>}
         >
           <p className="text-xs text-slate-500 bg-amber-50 border border-amber-100 rounded-lg p-2 mb-3">{TH.tagPrintHint}</p>
+          {isDark && <p className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded-lg p-2 mb-3">{TH.darkTagHint}</p>}
           {tags.length === 0 ? (
             <p className="text-sm text-slate-400 py-8 text-center">{TH.noTagsSelected}</p>
           ) : (
-            <div className="overflow-auto max-h-[28rem] bg-slate-100 rounded-xl p-3">
-              <PriceTagSheet tags={tags} layout={layout} logoUrl={logoUrl} />
+            <div className={`overflow-auto max-h-[28rem] rounded-xl p-3 ${isDark ? 'bg-slate-300' : 'bg-slate-100'}`}>
+              <PriceTagSheet tags={tags} layout={layout} logoUrl={logoUrl} dark={isDark} />
             </div>
           )}
         </Card>

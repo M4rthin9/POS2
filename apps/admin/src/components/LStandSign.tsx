@@ -13,8 +13,12 @@ const INSET = 0.15; // mm — half the stroke, so the outline is not clipped
  * One component serves both presets. A5 portrait stacks; the 60 × 40 acrylic
  * base card runs two columns, because the stacked layout would leave the name
  * at ~3mm and the mascot unreadable at that size.
+ *
+ * `dark` prints the card on a black ground with the type and accents in colour —
+ * the variant used behind the tinted acrylic bases. It only changes paint, never
+ * geometry, so the trim size stays identical to the light card.
  */
-export function LStandSign({ product, layout, logoUrl }: { product: AdminProduct; layout: TagLayout; logoUrl?: string | null }) {
+export function LStandSign({ product, layout, logoUrl, dark }: { product: AdminProduct; layout: TagLayout; logoUrl?: string | null; dark?: boolean }) {
   const { w, h } = layout;
   const land = w > h;
   // Type scales off the short edge so both presets share one stylesheet.
@@ -22,7 +26,7 @@ export function LStandSign({ product, layout, logoUrl }: { product: AdminProduct
 
   return (
     <div
-      className={`sign ${land ? 'sign--land' : 'sign--port'}`}
+      className={`sign ${land ? 'sign--land' : 'sign--port'}${dark ? ' sign--dark' : ''}`}
       style={{ ['--sign-w' as string]: `${w}mm`, ['--sign-h' as string]: `${h}mm`, ['--sign-scale' as string]: String(scale) }}
     >
       {/* The outline is the trim line — same contract as the sticker cut path. */}
