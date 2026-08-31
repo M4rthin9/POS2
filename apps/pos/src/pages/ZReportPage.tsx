@@ -5,7 +5,6 @@ import { fmt, fmtDate, TH, PAYMENT_LABELS } from '@cida/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../store/auth';
 import { useCart } from '../store/cart';
-import { bluetoothAvailable } from '../lib/bluetooth-printer';
 import { printZReportThermal } from '../lib/escpos';
 
 function today(): string {
@@ -265,9 +264,12 @@ export default function ZReportPage() {
                 </button>
               )}
 
-              {bluetoothAvailable() && settings && (
-                <button onClick={printThermal} className="w-full py-3 rounded-xl bg-white border border-slate-200 font-bold text-sm">
-                  {TH.btPrintThermal}
+              {settings && (
+                <button
+                  onClick={printThermal}
+                  className="w-full py-3 rounded-xl bg-white border border-slate-200 font-bold text-sm"
+                >
+                  🖨️ {TH.printDailyClose}
                 </button>
               )}
             </div>

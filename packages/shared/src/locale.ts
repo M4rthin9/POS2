@@ -121,6 +121,7 @@ export const TH = {
   btForget: 'ลืมเครื่องพิมพ์',
   btPickHint: 'เลือก "InnerPrinter" จากรายการ — จำไว้ครั้งเดียว เชื่อมต่อเองในครั้งถัดไป',
   btPrintThermal: 'พิมพ์ที่เครื่องปริ้นเนอร์',
+  printDailyClose: 'พิมพ์สรุปปิดยอด',
 
   // ── Period picker ──
   periodToday: 'วันนี้',
