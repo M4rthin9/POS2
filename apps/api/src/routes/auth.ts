@@ -3,32 +3,12 @@ import type { Context } from 'hono';
 import { verifyPin, hashPin, randomSalt, isValidPin } from '../lib/password';
 import { signAccessToken, signRefreshToken, verifyToken, sha256hex } from '../lib/jwt';
 import { ok, fail, badRequest, unauthorized } from '../lib/http';
-import { ACCESS_TTL, REFRESH_TTL, LOGIN_MAX_FAILURES, LOGIN_LOCK_MINUTES } from '../env';
+import { ACCESS_TTL, REFRESH_TTL, LOGIN_LOCK_MINUTES } from '../env';
+import { getLoginState, isLocked, lockMinutesLeft, registerFailure, resetLoginState } from '../lib/lockout';
 import { requireAuth } from '../middleware';
 import type { Env, Variables } from '../env';
 
 const auth = new Hono<{ Bindings: Env; Variables: Variables }>();
-
-async function getLoginState(c: Context, username: string) {
-  const raw = await c.env.CACHE.get(`login:${username}`);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as { count: number; locked_until: number };
-  } catch {
-    return null;
-  }
-}
-
-async function lockUser(c: Context, username: string, count: number) {
-  const locked_until = Date.now() + LOGIN_LOCK_MINUTES * 60 * 1000;
-  await c.env.CACHE.put(`login:${username}`, JSON.stringify({ count, locked_until }), {
-    expirationTtl: LOGIN_LOCK_MINUTES * 60,
-  });
-}
-
-async function resetLoginState(c: Context, username: string) {
-  await c.env.CACHE.delete(`login:${username}`);
-}
 
 auth.post('/login', async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -37,9 +17,8 @@ auth.post('/login', async (c) => {
   if (!username || !isValidPin(pin)) return badRequest(c, 'กรุณากรอกชื่อผู้ใช้และ PIN');
 
   const state = await getLoginState(c, username);
-  if (state && state.locked_until > Date.now()) {
-    const mins = Math.ceil((state.locked_until - Date.now()) / 60000);
-    return fail(c, `ล็อกชั่วคราว โปรดรอ ${mins} นาที`, 429, 'LOCKED');
+  if (isLocked(state)) {
+    return fail(c, `ล็อกชั่วคราว โปรดรอ ${lockMinutesLeft(state!)} นาที`, 429, 'LOCKED');
   }
 
   const row = await c.env.DB.prepare(
@@ -50,14 +29,11 @@ auth.post('/login', async (c) => {
 
   const valid = row && row.active === 1 && (await verifyPin(pin, row.pin_salt as string, row.pin_hash as string));
   if (!valid) {
-    const count = (state?.count || 0) + 1;
-    if (count >= LOGIN_MAX_FAILURES) {
-      await lockUser(c, username, count);
-      return fail(c, `PIN ผิดติดต่อกัน ${count} ครั้ง ล็อก ${LOGIN_LOCK_MINUTES} นาที`, 429, 'LOCKED');
-    }
-    await c.env.CACHE.put(`login:${username}`, JSON.stringify({ count, locked_until: 0 }), { expirationTtl: 15 * 60 });
-    const remaining = LOGIN_MAX_FAILURES - count;
-    return fail(c, `ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง (เหลือ ${remaining} ครั้ง)`, 401, 'BAD_CREDENTIALS');
+    // The message never reveals whether the username exists or how many tries
+    // are left — both are free intelligence for someone guessing PINs.
+    const { locked } = await registerFailure(c, username, state);
+    if (locked) return fail(c, `กรอกผิดหลายครั้ง ล็อก ${LOGIN_LOCK_MINUTES} นาที`, 429, 'LOCKED');
+    return fail(c, 'ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง', 401, 'BAD_CREDENTIALS');
   }
 
   await resetLoginState(c, username);

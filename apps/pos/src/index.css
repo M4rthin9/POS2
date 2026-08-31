@@ -36,6 +36,10 @@ body {
 }
 
 @media print {
+  /* Thermal roll: no paper margins, the print service owns the feed */
+  @page {
+    margin: 0;
+  }
   body * {
     visibility: hidden;
   }

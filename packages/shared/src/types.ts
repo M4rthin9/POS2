@@ -385,6 +385,7 @@ export interface ZReport {
   void_count: number;
   refund_count: number;
   closed_by: number | null;
+  closer_name?: string | null;
   closed_at: string | null;
   report_hash: string | null;
   /** Live recomputation, present so the UI can flag activity booked after close. */

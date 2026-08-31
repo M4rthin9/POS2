@@ -1,17 +1,20 @@
 // ── Typed API client for the POS app ──
 
 import { apiFetch, parseApi, resolveApiBase, setApiBase, type ApiEnvelope } from '@cida/shared';
-import type { CidaEvent, Division, LoginResponse, Product, PublicSettings, Sale, SaleCreateInput, SaleVoidInput, User } from '@cida/shared';
+import type { CidaEvent, Division, LoginResponse, Product, PublicSettings, Sale, SaleCreateInput, SaleVoidInput, ZReport } from '@cida/shared';
 import { useAuth } from '../store/auth';
 
 export { resolveApiBase, setApiBase };
 
 async function request<T>(path: string, init?: RequestInit, retry = true): Promise<T> {
   const auth = useAuth.getState();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((init?.headers as Record<string, string>) || {}),
+  };
   if (auth.accessToken) headers.Authorization = `Bearer ${auth.accessToken}`;
 
-  let res = await apiFetch(path, { ...init, headers });
+  const res = await apiFetch(path, { ...init, headers });
 
   if (res.status === 401 && retry && auth.refreshToken) {
     const refreshed = await refreshTokens();
@@ -73,16 +76,45 @@ export const api = {
 
   updateSettings: (settings: PublicSettings) =>
     request<Record<string, string>>('/api/admin/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+
+  // ── X / Z report. The API scopes a cashier to their own figures. ──
+  zreport: (q?: { date?: string; event_id?: number | null }) => request<ZReport>(`/api/zreport${qs(q)}`),
+  closeZReport: (input: { business_date: string; event_id?: number | null; cash_counted: number | null }) =>
+    request<ZReport>('/api/zreport/close', { method: 'POST', body: JSON.stringify(input) }),
+  zreportHistory: () => request<ZReport[]>('/api/zreport/history'),
 };
+
+function qs(params?: object): string {
+  if (!params) return '';
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
+  }
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
 
 export interface QueuedSale {
   id: string;
   payload: SaleCreateInput;
   created_at: string;
   user_id?: number;
+  /** Failed sync passes. Entries are parked once this reaches MAX_SYNC_ATTEMPTS. */
+  attempts?: number;
+  last_error?: string;
+  /** Set when the entry has been given up on; kept for the cashier to inspect. */
+  parked?: boolean;
 }
 
 const QUEUE_KEY = 'cida_pos_offline_queue';
+
+/**
+ * A sale the server keeps rejecting (deleted product, closed event, no stock)
+ * would otherwise be re-POSTed on every sync pass forever. After this many
+ * passes the entry is parked: kept in storage so nothing is silently lost, but
+ * no longer retried.
+ */
+export const MAX_SYNC_ATTEMPTS = 5;
 
 export function getQueue(): QueuedSale[] {
   try {
@@ -101,20 +133,44 @@ export function addToQueue(payload: QueuedSale['payload']): QueuedSale {
 }
 
 export function removeFromQueue(id: string) {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(getQueue().filter((q) => q.id !== id)));
+  saveQueue(getQueue().filter((q) => q.id !== id));
 }
 
-export async function syncQueue(): Promise<{ ok: number; failed: number }> {
+function saveQueue(q: QueuedSale[]) {
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+}
+
+/** Entries still waiting to sync (parked ones are excluded). */
+export function pendingQueue(): QueuedSale[] {
+  return getQueue().filter((q) => !q.parked);
+}
+
+export function parkedQueue(): QueuedSale[] {
+  return getQueue().filter((q) => q.parked);
+}
+
+export function clearParked() {
+  saveQueue(getQueue().filter((q) => !q.parked));
+}
+
+export async function syncQueue(): Promise<{ ok: number; failed: number; parked: number }> {
   let ok = 0;
   let failed = 0;
-  for (const entry of getQueue()) {
+  for (const entry of pendingQueue()) {
     try {
       await api.createSale({ ...entry.payload, client_sale_id: entry.id });
       removeFromQueue(entry.id);
       ok++;
-    } catch {
+    } catch (e) {
+      const attempts = (entry.attempts || 0) + 1;
+      const message = e instanceof Error ? e.message : String(e);
+      saveQueue(
+        getQueue().map((q) =>
+          q.id === entry.id ? { ...q, attempts, last_error: message, parked: attempts >= MAX_SYNC_ATTEMPTS } : q,
+        ),
+      );
       failed++;
     }
   }
-  return { ok, failed };
+  return { ok, failed, parked: parkedQueue().length };
 }

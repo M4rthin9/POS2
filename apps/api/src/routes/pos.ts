@@ -3,8 +3,11 @@ import type { Context } from 'hono';
 import { requireAuth } from '../middleware';
 import { ok, fail, badRequest, notFound } from '../lib/http';
 import { sealSale } from '../lib/ledger';
+import { closeZReport, parseCounted, readZReport, todayISO, zReportHistory } from '../lib/zreport';
+import { auditStatement } from '../lib/audit';
 import { isValidPin, verifyPin } from '../lib/password';
-import { LOGIN_LOCK_MINUTES, LOGIN_MAX_FAILURES } from '../env';
+import { LOGIN_LOCK_MINUTES } from '../env';
+import { getLoginState, isLocked, lockMinutesLeft, registerFailure, resetLoginState } from '../lib/lockout';
 import { reverseSale } from './admin';
 import type { PaymentMethod } from '@cida/shared';
 import type { Env, Variables } from '../env';
@@ -279,17 +282,8 @@ pos.post('/sales', async (c) => {
 // recorded as voided_by / audit actor). Failures share the same KV lockout keys
 // as /auth/login so a brute-force attempt also locks the real superadmin login.
 async function checkSuperadmin(c: Ctx, username: string, pin: string): Promise<{ id: number }> {
-  const raw = await c.env.CACHE.get(`login:${username}`);
-  let state: { count: number; locked_until: number } | null = null;
-  try {
-    state = raw ? (JSON.parse(raw) as { count: number; locked_until: number }) : null;
-  } catch {
-    state = null;
-  }
-  if (state && state.locked_until > Date.now()) {
-    const mins = Math.ceil((state.locked_until - Date.now()) / 60000);
-    throw { locked: true, mins };
-  }
+  const state = await getLoginState(c, username);
+  if (isLocked(state)) throw { locked: true, mins: lockMinutesLeft(state!) };
 
   const row = await c.env.DB.prepare(
     'SELECT id, role, active, pin_hash, pin_salt FROM users WHERE username = ?',
@@ -299,17 +293,11 @@ async function checkSuperadmin(c: Ctx, username: string, pin: string): Promise<{
 
   const valid = row && row.active === 1 && row.role === 'superadmin' && (await verifyPin(pin, row.pin_salt as string, row.pin_hash as string));
   if (!valid) {
-    const count = (state?.count || 0) + 1;
-    if (count >= LOGIN_MAX_FAILURES) {
-      const locked_until = Date.now() + LOGIN_LOCK_MINUTES * 60 * 1000;
-      await c.env.CACHE.put(`login:${username}`, JSON.stringify({ count, locked_until }), { expirationTtl: LOGIN_LOCK_MINUTES * 60 });
-      throw { locked: true, mins: LOGIN_LOCK_MINUTES };
-    }
-    await c.env.CACHE.put(`login:${username}`, JSON.stringify({ count, locked_until: 0 }), { expirationTtl: 15 * 60 });
-    throw { locked: false, remaining: LOGIN_MAX_FAILURES - count };
+    const { locked } = await registerFailure(c, username, state);
+    throw { locked, mins: LOGIN_LOCK_MINUTES };
   }
 
-  await c.env.CACHE.delete(`login:${username}`);
+  await resetLoginState(c, username);
   return { id: row.id as number };
 }
 
@@ -328,8 +316,64 @@ pos.post('/sales/:id/void', async (c) => {
   } catch (e) {
     const x = e as { locked: boolean; mins?: number; remaining?: number };
     if (x.locked) return fail(c, `ผู้ดูแลระบบถูกล็อกชั่วคราว โปรดรอ ${x.mins} นาที`, 429, 'LOCKED');
-    return fail(c, `ชื่อผู้ใช้หรือ PIN ผู้ดูแลระบบไม่ถูกต้อง (เหลือ ${x.remaining} ครั้ง)`, 401, 'BAD_SUPERADMIN');
+    return fail(c, 'ชื่อผู้ใช้หรือ PIN ผู้ดูแลระบบไม่ถูกต้อง', 401, 'BAD_SUPERADMIN');
   }
+});
+
+// ── X / Z report (cashier-scoped) ──
+//
+// Same computation the admin app uses, but a cashier may only ever see and
+// close their own figures; any cashier_id in the request is ignored for them.
+// Admins keep full scope so a supervisor can close a whole day from the POS.
+function zScope(c: Ctx, raw: { date: string; eventId: number | null; cashierId: number | null }) {
+  const user = c.get('user');
+  const isAdmin = user.role === 'admin' || user.role === 'superadmin';
+  return { ...raw, cashierId: isAdmin ? raw.cashierId : user.id };
+}
+
+pos.get('/zreport', async (c) => {
+  const scope = zScope(c, {
+    date: c.req.query('date') || todayISO(),
+    eventId: Number(c.req.query('event_id')) || null,
+    cashierId: Number(c.req.query('cashier_id')) || null,
+  });
+  return ok(c, await readZReport(c.env.DB, scope));
+});
+
+pos.post('/zreport/close', async (c) => {
+  const b = await c.req.json().catch(() => null);
+  const scope = zScope(c, {
+    date: String(b?.business_date || '').trim() || todayISO(),
+    eventId: Number(b?.event_id) || null,
+    cashierId: Number(b?.cashier_user_id) || null,
+  });
+  const counted = parseCounted(b?.cash_counted);
+  if (counted === undefined) return badRequest(c, 'จำนวนเงินสดที่นับได้ไม่ถูกต้อง');
+
+  const result = await closeZReport(c.env.DB, scope, counted, c.get('user').id);
+  if (!result.ok) return fail(c, 'วันนี้ปิดยอดไปแล้ว', 409, 'ALREADY_CLOSED');
+
+  await auditStatement(c, {
+    action: 'ZREPORT_CLOSE',
+    entity: 'z_reports',
+    entity_id: Number(result.row?.id),
+    after: {
+      date: scope.date,
+      event_id: scope.eventId,
+      cashier_user_id: scope.cashierId,
+      ...result.figures,
+      cash_counted: counted,
+      variance: result.variance,
+    },
+  }).run();
+
+  return ok(c, result.row, 201);
+});
+
+pos.get('/zreport/history', async (c) => {
+  const user = c.get('user');
+  const isAdmin = user.role === 'admin' || user.role === 'superadmin';
+  return ok(c, await zReportHistory(c.env.DB, isAdmin ? null : user.id));
 });
 
 export default pos;

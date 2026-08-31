@@ -18,7 +18,9 @@
     "deploy:api": "npm run deploy -w apps/api",
     "deploy:pos": "npm run deploy -w apps/pos",
     "deploy:admin": "npm run deploy -w apps/admin",
-    "migrate": "npm run migrate -w apps/api"
+    "migrate": "npm run migrate -w apps/api",
+    "reset-sales:local": "npm run reset-sales:local -w apps/api",
+    "reset-sales:remote": "npm run reset-sales:remote -w apps/api"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

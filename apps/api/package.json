@@ -8,6 +8,8 @@
     "deploy": "wrangler deploy",
     "migrate": "wrangler d1 migrations apply pos2-db --remote",
     "migrate:local": "wrangler d1 migrations apply pos2-db --local",
+    "reset-sales:local": "wrangler d1 execute pos2-db --local --file scripts/reset-sales.sql",
+    "reset-sales:remote": "wrangler d1 execute pos2-db --remote --file scripts/reset-sales.sql",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

@@ -4,6 +4,15 @@ import type { PublicSettings } from '@cida/shared';
 import { TH } from '@cida/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../store/auth';
+import {
+  autoConnect,
+  bluetoothAvailable,
+  forgetPrinter,
+  isConnected,
+  pickPrinter,
+  rememberedPrinter,
+} from '../lib/bluetooth-printer';
+import { printTestPage } from '../lib/escpos';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -17,13 +26,63 @@ export default function SettingsPage() {
     receipt_footer: '',
     promptpay_id: '',
     logo_url: '',
-    print_size: '80mm',
+    print_size: '58mm',
   });
   const [saved, setSaved] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [printerName, setPrinterName] = useState<string | null>(null);
+  const [printerConnected, setPrinterConnected] = useState(false);
 
   useEffect(() => {
-    api.publicSettings().then(setSettings).catch(() => {});
+    api.publicSettings()
+      .then(setSettings)
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+    setPrinterName(rememberedPrinter()?.name ?? null);
+    autoConnect().finally(() => setPrinterConnected(isConnected()));
   }, []);
+
+  async function connectPrinter() {
+    setError('');
+    try {
+      const rec = await pickPrinter();
+      setPrinterName(rec.name);
+      setPrinterConnected(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : TH.error);
+    }
+  }
+
+  async function testPrint() {
+    setError('');
+    try {
+      await printTestPage(settings);
+      setPrinterConnected(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : TH.error);
+    }
+  }
+
+  async function forget() {
+    await forgetPrinter();
+    setPrinterName(null);
+    setPrinterConnected(false);
+  }
+
+  /**
+   * Wipes this device's local sale state. Needed when the shop database is
+   * reset: a leftover offline-queue entry would otherwise replay an old sale
+   * into the fresh ledger on the next sync.
+   */
+  function clearLocalData() {
+    for (const key of ['cida_pos_offline_queue', 'cida_pos_held_carts', 'cida_pos_cart']) {
+      localStorage.removeItem(key);
+    }
+    setNotice(TH.clearLocalDataDone);
+    setTimeout(() => setNotice(''), 4000);
+  }
 
   function set<K extends keyof PublicSettings>(k: K, v: PublicSettings[K]) {
     setSaved(false);
@@ -31,11 +90,12 @@ export default function SettingsPage() {
   }
 
   async function save() {
+    setError('');
     try {
       await api.updateSettings(settings);
       setSaved(true);
     } catch (e) {
-      alert(e instanceof Error ? e.message : TH.error);
+      setError(e instanceof Error ? e.message : TH.error);
     }
   }
 
@@ -68,6 +128,8 @@ export default function SettingsPage() {
       </header>
 
       <div className="p-4 max-w-xl mx-auto w-full flex-1">
+        {error && <div className="mb-3 bg-red-50 text-red-700 text-sm font-semibold rounded-xl px-4 py-2.5">{error}</div>}
+        {notice && <div className="mb-3 bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-xl px-4 py-2.5">{notice}</div>}
         <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
           <label className="block">
             <span className="text-sm font-medium text-slate-600">{TH.orgName}</span>
@@ -120,8 +182,54 @@ export default function SettingsPage() {
 
           {saved && <p className="text-sm text-emerald-600 font-medium">{TH.saved}</p>}
 
-          <button onClick={save} className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 active:scale-[0.99] transition">
+          <button
+            onClick={save}
+            disabled={!loaded}
+            className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 active:scale-[0.99] transition disabled:opacity-50"
+          >
             {TH.save}
+          </button>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3 mt-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-slate-700">{TH.btPrinter}</span>
+            {printerName ? (
+              <span className={`text-xs font-medium ${printerConnected ? 'text-emerald-600' : 'text-slate-400'}`}>
+                {printerConnected ? `${TH.btConnected} · ${printerName}` : `${TH.btNotConnected} · ${printerName}`}
+              </span>
+            ) : null}
+          </div>
+          {bluetoothAvailable() ? (
+            <>
+              <span className="block text-xs text-slate-400">{TH.btPickHint}</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={connectPrinter} className="py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition">
+                  {TH.btConnect}
+                </button>
+                <button onClick={testPrint} className="py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 transition">
+                  {TH.btTestPrint}
+                </button>
+              </div>
+              {printerName && (
+                <button onClick={forget} className="w-full py-2 rounded-xl bg-red-50 text-red-600 text-sm font-semibold hover:bg-red-100 transition">
+                  {TH.btForget}
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-amber-600">{TH.btNotSupported}</p>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-2 mt-4">
+          <span className="text-sm font-bold text-slate-700">{TH.clearLocalData}</span>
+          <p className="text-xs text-slate-400">{TH.clearLocalDataHint}</p>
+          <button
+            onClick={clearLocalData}
+            className="w-full py-2.5 rounded-xl bg-red-50 text-red-600 text-sm font-semibold hover:bg-red-100 transition"
+          >
+            {TH.clearLocalData}
           </button>
         </div>
       </div>

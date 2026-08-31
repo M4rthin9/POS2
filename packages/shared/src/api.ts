@@ -11,9 +11,10 @@ export const PROD_API_URLS = [
 export const PROD_API_URL = PROD_API_URLS[0];
 const DEV_API_URL = 'http://localhost:8787';
 
-// NOTE: `import.meta.env` must be accessed literally — Vite statically replaces
-// it at build time (dead-code-eliminates the DEV branch in prod). Reading it
-// through a variable leaves a runtime check that fails on Cloudflare Pages.
+// NOTE: Vite statically replaces `import.meta.env.PROD` and friends at build
+// time, which is what dead-code-eliminates the DEV branch below. The dynamic
+// lookup in `envVar` only works because Vite also emits the whole
+// `import.meta.env` object — so a typo'd key is a silent undefined, not an error.
 
 function envVar(key: string): string | undefined {
   const v = import.meta.env[key];
@@ -41,7 +42,16 @@ export function setApiBase(url: string) {
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const bases = apiBases();
+  // Failover exists because ad blockers kill *.workers.dev, so the very first
+  // request (a POST /auth/login) still has to be able to find a live host.
+  // Once any request has succeeded the reachable base is known, and from then
+  // on writes are single-shot: a network error on a write does not mean the
+  // server did not process it, and replaying a /void or /refresh on another
+  // host would duplicate it (a duplicated refresh signs the cashier out
+  // mid-shift). Sales carry client_sale_id, so only they are safe to replay.
+  const method = (init?.method || 'GET').toUpperCase();
+  const mayFailover = method === 'GET' || !baseConfirmed;
+  const bases = mayFailover ? apiBases() : [resolveApiBase()];
   let lastErr: unknown;
   for (let i = 0; i < bases.length; i++) {
     const base = bases[i];
@@ -49,6 +59,7 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
       const res = await fetch(base + path, init);
       if (res.type === 'error') throw new Error(`blocked: ${base}`);
       if (i > 0) setApiBase(base);
+      baseConfirmed = true;
       return res;
     } catch (e) {
       lastErr = e;
@@ -56,6 +67,9 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   }
   throw lastErr instanceof Error ? lastErr : new Error('API unreachable');
 }
+
+/** Set once a host has answered, which pins writes to that host thereafter. */
+let baseConfirmed = false;
 
 function apiBases(): string[] {
   const list = [resolveApiBase()];

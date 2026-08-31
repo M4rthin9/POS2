@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import SalesPage from './pages/SalesPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
+import ZReportPage from './pages/ZReportPage';
 
 export default function App() {
   const user = useAuth((s) => s.user);
@@ -22,6 +23,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<SalesPage />} />
       <Route path="/history" element={<HistoryPage />} />
+      <Route path="/zreport" element={<ZReportPage />} />
       <Route path="/settings" element={<SettingsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

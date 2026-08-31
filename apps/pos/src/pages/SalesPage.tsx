@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { CartItem, CidaEvent, Division, PaymentMethod, Product, Sale } from '@cida/shared';
 import { fmt, fmtDate, TH } from '@cida/shared';
-import { api, syncQueue, getQueue, addToQueue } from '../lib/api';
+import { api, syncQueue, pendingQueue, addToQueue } from '../lib/api';
 import { useAuth } from '../store/auth';
 import { useCart, cartTotals } from '../store/cart';
 import { getHeld, holdCart, releaseHeld, type HeldCart } from '../store/held';
@@ -10,6 +10,8 @@ import PromptPayModal from '../components/PromptPayModal';
 import SplitBillModal, { type SplitPayment } from '../components/SplitBillModal';
 import { Receipt } from '../components/Receipt';
 import { printNode } from '../lib/print';
+import { autoConnect, bluetoothAvailable } from '../lib/bluetooth-printer';
+import { printSaleThermal } from '../lib/escpos';
 
 export default function SalesPage() {
   const navigate = useNavigate();
@@ -21,6 +23,12 @@ export default function SalesPage() {
   useEffect(() => {
     bindUser(user?.id ?? null);
   }, [user?.id, bindUser]);
+
+  // Reconnect the remembered built-in printer in the background so the first
+  // receipt prints without any pairing prompt.
+  useEffect(() => {
+    autoConnect().catch(() => {});
+  }, []);
 
   const [events, setEvents] = useState<CidaEvent[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -43,8 +51,9 @@ export default function SalesPage() {
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [online, setOnline] = useState(navigator.onLine);
-  const [queue, setQueue] = useState(getQueue());
+  const [queue, setQueue] = useState(pendingQueue());
   const [showCart, setShowCart] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
 
@@ -91,12 +100,15 @@ export default function SalesPage() {
   }, []);
 
   async function doSync() {
-    if (online) {
-      const res = await syncQueue();
-      setQueue(getQueue());
-      if (res.ok) alert(`${TH.synced} (${res.ok})`);
-      if (res.failed) alert(`${TH.syncPending}: ${res.failed}`);
-    }
+    if (!online) return;
+    const res = await syncQueue();
+    setQueue(pendingQueue());
+    const parts: string[] = [];
+    if (res.ok) parts.push(`${TH.synced} (${res.ok})`);
+    if (res.failed) parts.push(`${TH.syncPending}: ${res.failed}`);
+    if (res.parked) parts.push(`${TH.queueFailed}: ${res.parked}`);
+    setNotice(parts.join(' · '));
+    if (parts.length) setTimeout(() => setNotice(''), 4000);
   }
 
   // Sold-out products stay on the grid so staff can see what ran out, but they
@@ -131,9 +143,10 @@ export default function SalesPage() {
     if (!navigator.onLine) {
       addToQueue(payload);
       setModal(null);
-      setQueue(getQueue());
+      setQueue(pendingQueue());
       clear();
-      alert(`${TH.offline} - ${TH.offlinePending}`);
+      setNotice(`${TH.offline} - ${TH.offlinePending}`);
+      setTimeout(() => setNotice(''), 4000);
       setBusy(false);
       return;
     }
@@ -154,6 +167,20 @@ export default function SalesPage() {
     // Print only the receipt, not the whole app behind the modal — the preview
     // shows up much faster this way.
     printNode(receiptRef.current, { skipWebFonts: true });
+  }
+
+  async function printThermal() {
+    if (!lastSale) return;
+    if (!bluetoothAvailable()) {
+      setError(TH.btNotSupported);
+      return;
+    }
+    setError('');
+    try {
+      await printSaleThermal(lastSale, settings);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : TH.error);
+    }
   }
 
   // ── Hold / retrieve cart ──
@@ -231,6 +258,14 @@ export default function SalesPage() {
           <button onClick={() => navigate('/history')} className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm transition">
             {TH.history}
           </button>
+          <button
+            onClick={() => navigate('/zreport')}
+            title={TH.closeDayButton}
+            className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm transition"
+          >
+            <span className="lg:hidden">🔒</span>
+            <span className="hidden lg:inline">🔒 {TH.closeDayButton}</span>
+          </button>
           <button onClick={() => navigate('/settings')} className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm transition">
             ⚙️
           </button>
@@ -264,6 +299,16 @@ export default function SalesPage() {
           <span>
             {events.length === 0 ? 'ยังไม่มีกิจกรรมที่เปิดขาย กรุณาติดต่อผู้ดูแลระบบ' : 'กรุณาเลือกกิจกรรมที่ปฏิบัติหน้าที่ก่อนเริ่มขาย'}
           </span>
+        </div>
+      )}
+
+      {/* Status notice (sync result, offline queueing) */}
+      {notice && !modal && (
+        <div className="bg-slate-800 text-white text-sm px-4 py-2 flex items-center justify-between gap-3">
+          <span>{notice}</span>
+          <button onClick={() => setNotice('')} className="font-bold px-2">
+            ✕
+          </button>
         </div>
       )}
 
@@ -577,9 +622,12 @@ export default function SalesPage() {
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-4 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
             <Receipt ref={receiptRef} sale={lastSale} settings={settings} />
-            <div className="grid grid-cols-2 gap-3 mt-4 sticky bottom-0 bg-white pt-2">
+            <div className="grid grid-cols-3 gap-2 mt-4 sticky bottom-0 bg-white pt-2">
               <button onClick={() => setLastSale(null)} className="py-3 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-slate-200 transition">
                 {TH.close}
+              </button>
+              <button onClick={printThermal} className="py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 transition">
+                🖨 {TH.btPrintThermal}
               </button>
               <button onClick={printReceipt} className="py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition">
                 🖨 {TH.print}

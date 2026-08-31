@@ -27,6 +27,9 @@ function relative(iso: string | null): string {
   return `${Math.round(hrs / 24)} วันที่แล้ว`;
 }
 
+// Vite inlines this at build time; empty in a build made without the var set.
+const posUrl = import.meta.env.VITE_POS_URL || '';
+
 export default function DashboardPage() {
   const user = useAuth((s) => s.user);
   const isSuper = user?.role === 'superadmin';
@@ -138,14 +141,18 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <div className="no-print mb-3 flex flex-wrap gap-2">
-        <a
-          href={import.meta.env.VITE_POS_URL || 'http://localhost:5173'}
-          target="_blank"
-          rel="noreferrer"
-          className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 shadow-sm transition"
-        >
-          🛒 {TH.openPos}
-        </a>
+        {/* Rendered only when configured — a hardcoded localhost fallback ships
+            a dead link to production whenever VITE_POS_URL is missing. */}
+        {posUrl && (
+          <a
+            href={posUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 shadow-sm transition"
+          >
+            🛒 {TH.openPos}
+          </a>
+        )}
         <Link to="/zreport" className="px-3 py-1.5 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 shadow-sm transition">
           📋 {TH.xReport} / {TH.zReport}
         </Link>

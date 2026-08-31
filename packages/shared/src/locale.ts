@@ -111,6 +111,17 @@ export const TH = {
   printSize: 'ขนาดใบเสร็จ',
   printSizeHint: 'เช่น 58mm (ใบเสร็จ 58 มม.) หรือ 80mm (ใบเสร็จ A4/80 มม.)',
 
+  // ── Bluetooth thermal printer ──
+  btPrinter: 'เครื่องพิมพ์ในเครื่อง (บลูทูธ)',
+  btNotSupported: 'เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth — ต้องใช้ Chrome บน Android (HTTPS)',
+  btConnect: 'เชื่อมต่อเครื่องพิมพ์',
+  btConnected: 'เชื่อมต่อแล้ว',
+  btNotConnected: 'ยังไม่ได้เชื่อมต่อ',
+  btTestPrint: 'ทดสอบพิมพ์',
+  btForget: 'ลืมเครื่องพิมพ์',
+  btPickHint: 'เลือก "InnerPrinter" จากรายการ — จำไว้ครั้งเดียว เชื่อมต่อเองในครั้งถัดไป',
+  btPrintThermal: 'พิมพ์ที่เครื่องปริ้นเนอร์',
+
   // ── Period picker ──
   periodToday: 'วันนี้',
   period7d: '7 วัน',
@@ -242,6 +253,17 @@ export const TH = {
   dayOpen: 'ยังไม่ปิดวัน',
   closedAt: 'ปิดเมื่อ',
   closedBy: 'ปิดโดย',
+  closeDayButton: 'ปิดรายการขายต่อวัน',
+  zReportHistory: 'ประวัติการปิดวัน',
+  confirmCloseDay: 'ยืนยันปิดรายการขายของวันนี้? ตัวเลขจะถูกปิดตายและแก้ไขไม่ได้',
+  closeDaySuccess: 'ปิดรายการขายเรียบร้อยแล้ว',
+  zDrifted: 'มีการขายเกิดขึ้นหลังปิดวัน — ตัวเลขที่ปิดไว้ไม่เปลี่ยนแปลง',
+  reportHash: 'รหัสรายงาน',
+  noZReports: 'ยังไม่มีประวัติการปิดวัน',
+  clearLocalData: 'ล้างข้อมูลในเครื่อง',
+  clearLocalDataHint: 'ลบคิวขายออฟไลน์ บิลที่พักไว้ และตะกร้าปัจจุบันออกจากเครื่องนี้',
+  clearLocalDataDone: 'ล้างข้อมูลในเครื่องเรียบร้อยแล้ว',
+  queueFailed: 'คิวที่ส่งไม่สำเร็จ',
 
   // ── Hold cart / split bill ──
   holdCart: 'พักบิล',

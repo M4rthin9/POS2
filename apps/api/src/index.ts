@@ -20,8 +20,12 @@ app.use(
       if (!origin) return origin;
       if (configured.includes(origin)) return origin;
       if (origin.endsWith('.pages.dev')) return origin;
-      if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return origin;
-      return origin; // permissive fallback
+      // The project custom domain (POS/admin may move off pages.dev).
+      if (/^https:\/\/([a-z0-9-]+\.)*cidapos\.dpdns\.org$/.test(origin)) return origin;
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+      // Anything else is refused outright — returning the origin here would make
+      // the checks above decorative and let any site call the API.
+      return null;
     },
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],

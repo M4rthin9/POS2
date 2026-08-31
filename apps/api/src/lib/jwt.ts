@@ -5,7 +5,15 @@ import type { AuthUser } from '../env';
 
 const enc = new TextEncoder();
 
+/** HS256 needs at least 32 bytes to be worth anything. */
+const MIN_SECRET_LENGTH = 32;
+
 function secretKey(secret: string): Uint8Array {
+  // Without this guard an unset JWT_SECRET encodes the literal string
+  // "undefined" — a publicly known key that would sign valid superadmin tokens.
+  if (typeof secret !== 'string' || secret.length < MIN_SECRET_LENGTH) {
+    throw new Error('JWT_SECRET is missing or too short (need >= 32 characters). Run: wrangler secret put JWT_SECRET');
+  }
   return enc.encode(secret);
 }
 

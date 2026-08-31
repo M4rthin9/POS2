@@ -193,7 +193,7 @@ export default function ZReportPage() {
             )}
           </Card>
 
-          <Card title="📚 ประวัติการปิดวัน" dense>
+          <Card title={`📚 ${TH.zReportHistory}`} dense>
             <Table
               head={
                 <tr>
