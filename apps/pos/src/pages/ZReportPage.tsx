@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { CidaEvent, PublicSettings, ZReport } from '@cida/shared';
 import { fmt, fmtDate, TH, PAYMENT_LABELS } from '@cida/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../store/auth';
 import { useCart } from '../store/cart';
+import { printNode } from '../lib/print';
 import { printZReportThermal } from '../lib/escpos';
 
 function today(): string {
@@ -30,6 +31,7 @@ export default function ZReportPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const zPrintRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.activeEvents().then(setEvents).catch(() => setEvents([]));
@@ -86,8 +88,12 @@ export default function ZReportPage() {
     setError('');
     try {
       await printZReportThermal(z, settings);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : TH.error);
+    } catch {
+      // No iMin bridge and no Bluetooth adapter — fall back to a normal printer
+      // so the user can pick whichever printer exists right now.
+      setNotice(TH.btFallbackNotice);
+      setTimeout(() => setNotice(''), 4000);
+      printNode(zPrintRef.current);
     }
   }
 
@@ -306,6 +312,74 @@ export default function ZReportPage() {
           </>
         )}
       </div>
+
+      {/* Hidden printable Z-report used by the "normal printer" fallback. */}
+      {z && settings && (
+        <div className="hidden">
+          <div
+            ref={zPrintRef}
+            id="receipt-print"
+            data-print-size={settings.print_size?.includes('58') ? '58mm' : '80mm'}
+            className="bg-white text-slate-900 text-[12px] leading-snug px-3 py-4 font-mono"
+            style={{ maxWidth: settings.print_size?.includes('58') ? '58mm' : '80mm' }}
+          >
+            <div className="flex flex-col items-center text-center">
+              {settings.org_name && <div className="font-bold text-[13px] leading-tight">{settings.org_name}</div>}
+              <div className="font-bold text-[13px] mt-0.5">{TH.zReport}</div>
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <A4Row l={TH.businessDate} r={z.business_date} />
+              {z.event_name && <A4Row l={TH.event} r={z.event_name} />}
+              {z.cashier_name && <A4Row l={TH.cashier} r={z.cashier_name} />}
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <A4Row l={TH.grossSales} r={fmt(z.gross)} />
+              <A4Row l={TH.totalDiscount} r={`-${fmt(z.discount)}`} />
+              <A4Row l={TH.netRevenue} r={fmt(z.net)} strong />
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <A4Row l={PAYMENT_LABELS.Cash} r={fmt(z.cash_expected)} />
+              <A4Row l={PAYMENT_LABELS.PromptPay} r={fmt(z.promptpay_total)} />
+              {z.cash_counted !== null && <A4Row l={TH.cashCounted} r={fmt(z.cash_counted)} />}
+              {z.cash_counted !== null && <A4Row l={TH.cashVariance} r={fmt(z.variance ?? 0)} strong />}
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <A4Row l={TH.ordersCompleted} r={String(z.sale_count)} />
+              <A4Row l={TH.ordersVoid} r={String(z.void_count)} />
+              <A4Row l={TH.ordersRefunded} r={String(z.refund_count)} />
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              {z.closed_at && <A4Row l={TH.closedAt} r={fmtDate(z.closed_at)} />}
+              {z.closer_name && <A4Row l={TH.closedBy} r={z.closer_name} />}
+            </div>
+            {z.report_hash && (
+              <div className="text-center text-[9px] leading-tight mt-1">
+                <div>{TH.reportHash}</div>
+                <div className="break-all">{z.report_hash}</div>
+              </div>
+            )}
+            <div className="mt-3 space-y-2 text-center text-[10px]">
+              <div>{TH.printedAt}: {new Date().toLocaleString('th-TH')}</div>
+              <div>____________________</div>
+              <div>{TH.cashier}</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function A4Row({ l, r, strong }: { l: string; r: string; strong?: boolean }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-slate-500">{l}</span>
+      <span className={`font-semibold text-right ${strong ? 'text-[13px]' : ''}`}>{r}</span>
     </div>
   );
 }

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PublicSettings, ShiftReport } from '@cida/shared';
 import { fmt, todayKey, TH, PAYMENT_LABELS } from '@cida/shared';
 import { api } from '../lib/api';
 import type { ReportRound } from '../lib/api';
+import { printNode } from '../lib/print';
 import { printShiftReportThermal } from '../lib/escpos';
 
 // The cashier hands in takings at 10:00 and again at 14:00, then a combined
@@ -35,6 +36,7 @@ export default function RoundReport({ onRoundChange, reloadTick = 0 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const reportPrintRef = useRef<HTMLDivElement>(null);
 
   const round = useMemo<ReportRound>(
     () => ({ date, from_time: fromTime, to_time: toTime }),
@@ -69,8 +71,12 @@ export default function RoundReport({ onRoundChange, reloadTick = 0 }: Props) {
       await printShiftReportThermal(report, settings, title);
       setNotice(TH.reportPrinted);
       setTimeout(() => setNotice(''), 3000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : TH.error);
+    } catch {
+      // No iMin bridge and no Bluetooth adapter — fall back to a normal printer
+      // so the user can pick whichever printer exists right now.
+      setNotice(TH.btFallbackNotice);
+      setTimeout(() => setNotice(''), 4000);
+      printNode(reportPrintRef.current);
     } finally {
       setBusy(false);
     }
@@ -155,7 +161,70 @@ export default function RoundReport({ onRoundChange, reloadTick = 0 }: Props) {
         {error && <div className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</div>}
         {notice && <div className="text-sm text-emerald-700 bg-emerald-50 rounded-xl px-3 py-2">{notice}</div>}
       </div>
+
+      {/* Hidden printable report used by the "normal printer" fallback. */}
+      {report && settings && (
+        <div className="hidden">
+          <div
+            ref={reportPrintRef}
+            id="receipt-print"
+            data-print-size={settings.print_size?.includes('58') ? '58mm' : '80mm'}
+            className="bg-white text-slate-900 text-[12px] leading-snug px-3 py-4 font-mono"
+            style={{ maxWidth: settings.print_size?.includes('58') ? '58mm' : '80mm' }}
+          >
+            <div className="flex flex-col items-center text-center">
+              {settings.org_name && <div className="font-bold text-[13px] leading-tight">{settings.org_name}</div>}
+              <div className="font-bold text-[13px] mt-0.5">{title}</div>
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <A4Row l={TH.businessDate} r={report.business_date} />
+              <A4Row l={TH.roundPeriod} r={`${hhmm(report.from)} - ${hhmm(report.to)}`} />
+              {report.event_name && <A4Row l={TH.event} r={report.event_name} />}
+              {report.cashier_name && <A4Row l={TH.cashier} r={report.cashier_name} />}
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <A4Row l={TH.grossSales} r={fmt(report.gross)} />
+              <A4Row l={TH.totalDiscount} r={`-${fmt(report.discount)}`} />
+              <A4Row l={TH.netRevenue} r={fmt(report.net)} strong />
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <A4Row l={PAYMENT_LABELS.Cash} r={fmt(report.cash_expected)} />
+              <A4Row l={PAYMENT_LABELS.PromptPay} r={fmt(report.promptpay_total)} />
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <A4Row l={TH.ordersCompleted} r={String(report.sale_count)} />
+              <A4Row l={TH.ordersVoid} r={String(report.void_count)} />
+              <A4Row l={TH.ordersRefunded} r={String(report.refund_count)} />
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="mt-1 space-y-2 text-center text-[10px]">
+              <div>{TH.printedAt}: {new Date().toLocaleString('th-TH')}</div>
+              <div>____________________</div>
+              <div>{TH.cashier}</div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+// The bounds are already shop-local, so reuse their hh:mm slice rather than
+// re-parsing (fmtDate would treat them as UTC and shift every round by seven hours).
+function hhmm(local: string): string {
+  return local.slice(11, 16);
+}
+
+function A4Row({ l, r, strong }: { l: string; r: string; strong?: boolean }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-slate-500">{l}</span>
+      <span className={`font-semibold text-right ${strong ? 'text-[13px]' : ''}`}>{r}</span>
+    </div>
   );
 }
 
