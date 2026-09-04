@@ -10,7 +10,7 @@ import PromptPayModal from '../components/PromptPayModal';
 import SplitBillModal, { type SplitPayment } from '../components/SplitBillModal';
 import { Receipt } from '../components/Receipt';
 import { printNode } from '../lib/print';
-import { autoConnect, bluetoothAvailable } from '../lib/bluetooth-printer';
+import { autoConnect } from '../lib/bluetooth-printer';
 import { builtInPrinter, openCashDrawer, printSaleThermal } from '../lib/escpos';
 
 export default function SalesPage() {
@@ -188,15 +188,16 @@ export default function SalesPage() {
 
   async function printThermal() {
     if (!lastSale) return;
-    if (!builtInPrinter() && !bluetoothAvailable()) {
-      setError(TH.btNotSupported);
-      return;
-    }
     setError('');
     try {
       await printSaleThermal(lastSale, settings);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : TH.error);
+    } catch {
+      // No iMin bridge and no Bluetooth adapter (or the thermal printer did not
+      // connect) — fall back to a normal printer so the cashier can still pick
+      // an installed printer from the browser's print dialog.
+      setNotice(TH.btFallbackNotice);
+      setTimeout(() => setNotice(''), 4000);
+      printReceipt();
     }
   }
 

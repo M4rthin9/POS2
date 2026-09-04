@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PublicSettings } from '@cida/shared';
 import { TH } from '@cida/shared';
 import { api } from '../lib/api';
 import { useAuth } from '../store/auth';
+import { printNode } from '../lib/print';
 import {
   autoConnect,
   bluetoothAvailable,
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   const [printerName, setPrinterName] = useState<string | null>(null);
   const [printerConnected, setPrinterConnected] = useState(false);
   const builtIn = builtInPrinter();
+  const testTicketRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.publicSettings()
@@ -73,6 +75,13 @@ export default function SettingsPage() {
     await forgetPrinter();
     setPrinterName(null);
     setPrinterConnected(false);
+  }
+
+  /** Print the test ticket through the browser's normal printer picker. */
+  function normalPrintTest() {
+    setError('');
+    setNotice('');
+    printNode(testTicketRef.current);
   }
 
   /**
@@ -233,8 +242,43 @@ export default function SettingsPage() {
               )}
             </>
           ) : (
-            <p className="text-sm text-amber-600">{TH.btNotSupported}</p>
+            <>
+              <span className="block text-xs text-amber-600">{TH.btNotSupported}</span>
+              <span className="block text-xs text-slate-400">{TH.normalPrinterHint}</span>
+              <button onClick={normalPrintTest} className="w-full py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition">
+                {TH.normalPrinterTest}
+              </button>
+            </>
           )}
+        </div>
+
+        {/* Hidden printable test ticket used by the "normal printer" fallback. */}
+        <div className="hidden">
+          <div
+            ref={testTicketRef}
+            id="receipt-print"
+            data-print-size={settings.print_size?.includes('58') ? '58mm' : '80mm'}
+            className="bg-white text-slate-900 text-[12px] leading-snug px-3 py-4 font-mono"
+            style={{ maxWidth: settings.print_size?.includes('58') ? '58mm' : '80mm' }}
+          >
+            <div className="flex flex-col items-center text-center">
+              {settings.org_name && <div className="font-bold text-[13px] leading-tight">{settings.org_name}</div>}
+              <div className="font-bold text-[13px] mt-1">ทดสอบเครื่องพิมพ์ (ปกติ)</div>
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="space-y-0.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">{TH.printSize}</span>
+                <span className="font-semibold">{settings.print_size}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">เวลา</span>
+                <span>{new Date().toLocaleString('th-TH')}</span>
+              </div>
+            </div>
+            <div className="my-1.5 border-t border-dashed border-slate-400" />
+            <div className="text-center">เรียบร้อย ✓</div>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm p-4 space-y-2 mt-4">
