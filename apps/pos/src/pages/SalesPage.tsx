@@ -275,6 +275,15 @@ export default function SalesPage() {
           <button onClick={() => navigate('/history')} className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm transition">
             {TH.history}
           </button>
+          {/* The 10:00 and 14:00 hand-over report, one tap from the counter. */}
+          <button
+            onClick={() => navigate('/daily-report')}
+            title={TH.dailyReport}
+            className="px-2.5 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-600 text-sm font-semibold transition"
+          >
+            <span className="lg:hidden">📊</span>
+            <span className="hidden lg:inline">📊 {TH.dailyReport}</span>
+          </button>
           <button
             onClick={() => navigate('/zreport')}
             title={TH.closeDayButton}
