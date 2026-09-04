@@ -1,10 +1,18 @@
 // ── Typed API client for the POS app ──
 
 import { apiFetch, parseApi, resolveApiBase, setApiBase, type ApiEnvelope } from '@cida/shared';
-import type { CidaEvent, Division, LoginResponse, Product, PublicSettings, Sale, SaleCreateInput, SaleVoidInput, ZReport } from '@cida/shared';
+import type { CidaEvent, Division, LoginResponse, Product, PublicSettings, Sale, SaleCreateInput, SaleVoidInput, ShiftReport, ZReport } from '@cida/shared';
 import { useAuth } from '../store/auth';
 
 export { resolveApiBase, setApiBase };
+
+/** One hand-over round: a business date plus shop-local `HH:MM` bounds. */
+export interface ReportRound {
+  date: string;
+  from_time: string;
+  to_time: string;
+  event_id?: number | null;
+}
 
 async function request<T>(path: string, init?: RequestInit, retry = true): Promise<T> {
   const auth = useAuth.getState();
@@ -69,7 +77,10 @@ export const api = {
 
   createSale: (input: SaleCreateInput) => request<Sale>('/api/sales', { method: 'POST', body: JSON.stringify(input) }),
 
-  mySales: () => request<Sale[]>('/api/sales'),
+  /** Without a round the server returns the cashier's most recent bills. */
+  mySales: (round?: ReportRound) => request<Sale[]>(`/api/sales${qs(round)}`),
+
+  shiftReport: (round: ReportRound) => request<ShiftReport>(`/api/shift-report${qs(round)}`),
 
   voidSale: (id: number, input: SaleVoidInput) =>
     request<Sale>(`/api/sales/${id}/void`, { method: 'POST', body: JSON.stringify(input) }),

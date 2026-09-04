@@ -11,7 +11,7 @@ import SplitBillModal, { type SplitPayment } from '../components/SplitBillModal'
 import { Receipt } from '../components/Receipt';
 import { printNode } from '../lib/print';
 import { autoConnect, bluetoothAvailable } from '../lib/bluetooth-printer';
-import { printSaleThermal } from '../lib/escpos';
+import { builtInPrinter, openCashDrawer, printSaleThermal } from '../lib/escpos';
 
 export default function SalesPage() {
   const navigate = useNavigate();
@@ -24,10 +24,11 @@ export default function SalesPage() {
     bindUser(user?.id ?? null);
   }, [user?.id, bindUser]);
 
-  // Reconnect the remembered built-in printer in the background so the first
-  // receipt prints without any pairing prompt.
+  // Reconnect the remembered Bluetooth printer in the background so the first
+  // receipt prints without any pairing prompt. Terminals with the built-in
+  // iMin printer need none of this.
   useEffect(() => {
-    autoConnect().catch(() => {});
+    if (!builtInPrinter()) autoConnect().catch(() => {});
   }, []);
 
   const [events, setEvents] = useState<CidaEvent[]>([]);
@@ -125,6 +126,19 @@ export default function SalesPage() {
 
   const soldOutCount = useMemo(() => products.filter((p) => p.stock !== null && p.stock <= 0).length, [products]);
 
+  // Only categories the selected event actually sells. Showing every division
+  // in the shop gives the cashier tabs that lead to an empty grid.
+  const eventDivisions = useMemo(() => {
+    const present = new Set(products.map((p) => p.division_id).filter((id): id is number => id !== null));
+    return divisions.filter((d) => present.has(d.id));
+  }, [divisions, products]);
+
+  // A category can disappear when the event changes or its last product sells
+  // out of the catalogue — fall back to "all" rather than filtering to nothing.
+  useEffect(() => {
+    if (activeDiv !== 'all' && !eventDivisions.some((d) => d.id === activeDiv)) setActiveDiv('all');
+  }, [eventDivisions, activeDiv]);
+
   const { subtotal, total } = cartTotals(items, discount);
   const change = cashGiven !== '' && modal === 'cash' ? Math.max(0, Number(cashGiven) - total) : 0;
 
@@ -156,6 +170,9 @@ export default function SalesPage() {
       setLastSale(sale);
       setCashGiven('');
       clear();
+      // Cash changes hands the moment the sale lands, so the drawer is kicked
+      // here rather than waiting for the cashier to reach the print button.
+      if (method === 'Cash' || payments?.some((p) => p.method === 'Cash')) openCashDrawer();
     } catch (e) {
       setError(e instanceof Error ? e.message : TH.error);
     } finally {
@@ -171,7 +188,7 @@ export default function SalesPage() {
 
   async function printThermal() {
     if (!lastSale) return;
-    if (!bluetoothAvailable()) {
+    if (!builtInPrinter() && !bluetoothAvailable()) {
       setError(TH.btNotSupported);
       return;
     }
@@ -352,7 +369,7 @@ export default function SalesPage() {
             >
               ทั้งหมด
             </button>
-            {divisions.map((d) => (
+            {eventDivisions.map((d) => (
               <button
                 key={d.id}
                 onClick={() => setActiveDiv(d.id)}

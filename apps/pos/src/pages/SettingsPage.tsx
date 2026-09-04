@@ -12,7 +12,7 @@ import {
   pickPrinter,
   rememberedPrinter,
 } from '../lib/bluetooth-printer';
-import { printTestPage } from '../lib/escpos';
+import { builtInPrinter, openCashDrawer, printTestPage } from '../lib/escpos';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -34,15 +34,19 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState('');
   const [printerName, setPrinterName] = useState<string | null>(null);
   const [printerConnected, setPrinterConnected] = useState(false);
+  const builtIn = builtInPrinter();
 
   useEffect(() => {
     api.publicSettings()
       .then(setSettings)
       .catch(() => {})
       .finally(() => setLoaded(true));
+    // The built-in printer needs no pairing, so Bluetooth is only probed when
+    // this terminal does not have one.
+    if (builtIn) return;
     setPrinterName(rememberedPrinter()?.name ?? null);
     autoConnect().finally(() => setPrinterConnected(isConnected()));
-  }, []);
+  }, [builtIn]);
 
   async function connectPrinter() {
     setError('');
@@ -193,14 +197,25 @@ export default function SettingsPage() {
 
         <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3 mt-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-slate-700">{TH.btPrinter}</span>
-            {printerName ? (
+            <span className="text-sm font-bold text-slate-700">{builtIn ? TH.builtInPrinter : TH.btPrinter}</span>
+            {builtIn ? (
+              <span className="text-xs font-medium text-emerald-600">{TH.builtInPrinterReady}</span>
+            ) : printerName ? (
               <span className={`text-xs font-medium ${printerConnected ? 'text-emerald-600' : 'text-slate-400'}`}>
                 {printerConnected ? `${TH.btConnected} · ${printerName}` : `${TH.btNotConnected} · ${printerName}`}
               </span>
             ) : null}
           </div>
-          {bluetoothAvailable() ? (
+          {builtIn ? (
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={testPrint} className="py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 transition">
+                {TH.btTestPrint}
+              </button>
+              <button onClick={openCashDrawer} className="py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition">
+                {TH.openCashDrawer}
+              </button>
+            </div>
+          ) : bluetoothAvailable() ? (
             <>
               <span className="block text-xs text-slate-400">{TH.btPickHint}</span>
               <div className="grid grid-cols-2 gap-2">

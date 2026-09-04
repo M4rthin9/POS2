@@ -393,6 +393,29 @@ export interface ZReport {
   drifted?: boolean;
 }
 
+/**
+ * One cashier hand-over round (10:00, 14:00, or the whole day combined).
+ * Unlike a Z-report nothing is sealed — a round can be reprinted any time.
+ */
+export interface ShiftReport {
+  business_date: string;
+  /** Shop-local bounds, half-open: 'YYYY-MM-DD HH:MM:SS'. */
+  from: string;
+  to: string;
+  event_id: number | null;
+  event_name: string | null;
+  cashier_user_id: number | null;
+  cashier_name: string | null;
+  gross: number;
+  discount: number;
+  net: number;
+  cash_expected: number;
+  promptpay_total: number;
+  sale_count: number;
+  void_count: number;
+  refund_count: number;
+}
+
 // ── Operations dashboard ──
 
 export interface DashboardEventStatus {

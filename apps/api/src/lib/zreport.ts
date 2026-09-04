@@ -24,24 +24,70 @@ export interface ZScope {
   cashierId: number | null;
 }
 
+/**
+ * Asia/Bangkok. `created_at` is written by datetime('now'), i.e. UTC, so every
+ * business-day and report-round boundary has to be shifted before it is cut:
+ * a sale rung up at 00:30 local is still 17:30 UTC on the previous date, and
+ * grouping on the raw UTC date would book it into yesterday's close.
+ * A module constant, never request input — it is interpolated into SQL.
+ */
+const SHOP_UTC_OFFSET_HOURS = 7;
+export const SHOP_TZ_MODIFIER = `+${SHOP_UTC_OFFSET_HOURS} hours`;
+
+/** SQL expression turning a stored UTC timestamp into shop-local time. */
+export function localTime(prefix = ''): string {
+  return `datetime(${prefix}created_at, '${SHOP_TZ_MODIFIER}')`;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Resolves a reporting round (`date` + local `HH:MM` bounds) into half-open
+ * local datetime bounds. An end at or before the start belongs to the next
+ * calendar day, which is what makes a late round like 22:00–02:00 work.
+ * Returns null when anything is malformed.
+ */
+export function resolveRound(date: string, fromTime: string, toTime: string): { from: string; to: string } | null {
+  if (!DATE_RE.test(date) || !TIME_RE.test(fromTime) || !TIME_RE.test(toTime)) return null;
+  const start = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(start.getTime())) return null;
+  const endDate =
+    toTime <= fromTime ? new Date(start.getTime() + 86400000).toISOString().slice(0, 10) : date;
+  return { from: `${date} ${fromTime}:00`, to: `${endDate} ${toTime}:00` };
+}
+
+/** A business day, or an arbitrary round within one, in shop-local time. */
+export type ZWindow =
+  | { kind: 'day'; date: string }
+  /** Half-open [from, to) so back-to-back rounds cannot double-count a sale. */
+  | { kind: 'range'; from: string; to: string };
+
 function round(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Today's *business* date. Shop-local, to match how the day is cut. */
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Date(Date.now() + SHOP_UTC_OFFSET_HOURS * 3600_000).toISOString().slice(0, 10);
 }
 
-export async function computeZ(db: D1Database, date: string, eventId: number | null, cashierId: number | null): Promise<ZFigures> {
+async function computeFigures(
+  db: D1Database,
+  window: ZWindow,
+  eventId: number | null,
+  cashierId: number | null,
+): Promise<ZFigures> {
   // Same predicate rendered twice: unaliased for the sales-only aggregate, and
   // `s.`-qualified for the query that joins sale_payments.
   const build = (p: string) => {
-    const where = [`date(${p}created_at) = ?`];
+    const local = localTime(p);
+    const where = window.kind === 'day' ? [`date(${local}) = ?`] : [`${local} >= ?`, `${local} < ?`];
     if (eventId) where.push(`${p}event_id = ?`);
     if (cashierId) where.push(`${p}cashier_user_id = ?`);
     return where.join(' AND ');
   };
-  const args: unknown[] = [date];
+  const args: unknown[] = window.kind === 'day' ? [window.date] : [window.from, window.to];
   if (eventId) args.push(eventId);
   if (cashierId) args.push(cashierId);
   const clause = build('');
@@ -86,6 +132,22 @@ export async function computeZ(db: D1Database, date: string, eventId: number | n
     void_count: Number(row?.voids ?? 0),
     refund_count: Number(row?.refunds ?? 0),
   };
+}
+
+/** Figures for one whole business day (shop-local). */
+export function computeZ(db: D1Database, date: string, eventId: number | null, cashierId: number | null): Promise<ZFigures> {
+  return computeFigures(db, { kind: 'day', date }, eventId, cashierId);
+}
+
+/** Figures for one reporting round, e.g. the 10:00 and 14:00 hand-overs. */
+export function computeRange(
+  db: D1Database,
+  from: string,
+  to: string,
+  eventId: number | null,
+  cashierId: number | null,
+): Promise<ZFigures> {
+  return computeFigures(db, { kind: 'range', from, to }, eventId, cashierId);
 }
 
 const closedSelect = `SELECT z.*, u.display_name AS closer_name, e.name AS event_name, cu.display_name AS cashier_name
