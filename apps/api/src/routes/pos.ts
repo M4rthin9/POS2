@@ -3,7 +3,16 @@ import type { Context } from 'hono';
 import { requireAuth } from '../middleware';
 import { ok, fail, badRequest, notFound } from '../lib/http';
 import { sealSale } from '../lib/ledger';
-import { closeZReport, parseCounted, readZReport, todayISO, zReportHistory } from '../lib/zreport';
+import {
+  closeZReport,
+  computeRange,
+  localTime,
+  parseCounted,
+  readZReport,
+  resolveRound,
+  todayISO,
+  zReportHistory,
+} from '../lib/zreport';
 import { auditStatement } from '../lib/audit';
 import { isValidPin, verifyPin } from '../lib/password';
 import { LOGIN_LOCK_MINUTES } from '../env';
@@ -80,6 +89,11 @@ pos.get('/sales', async (c) => {
   const eventId = c.req.query('event_id');
   const from = c.req.query('from');
   const to = c.req.query('to');
+  // Reporting round, resolved exactly like /shift-report so the listed bills
+  // and the printed summary can never disagree about where a round ends.
+  const roundDate = c.req.query('date');
+  const fromTime = c.req.query('from_time');
+  const toTime = c.req.query('to_time');
 
   let sql = `SELECT s.id, s.event_id, e.name AS event_name, s.cashier_user_id, u.display_name AS cashier_name,
                     s.subtotal, s.discount, s.total, s.payment_method, s.status, s.client_sale_id, s.created_at, s.tx_hash, s.seq
@@ -103,6 +117,12 @@ pos.get('/sales', async (c) => {
   if (to) {
     sql += ' AND date(s.created_at) <= ?';
     args.push(to);
+  }
+  if (roundDate && fromTime && toTime) {
+    const round = resolveRound(roundDate, fromTime, toTime);
+    if (!round) return badRequest(c, 'ช่วงเวลาไม่ถูกต้อง');
+    sql += ` AND ${localTime('s.')} >= ? AND ${localTime('s.')} < ?`;
+    args.push(round.from, round.to);
   }
   sql += ' ORDER BY s.id DESC LIMIT 200';
   const { results } = await c.env.DB.prepare(sql).bind(...args).all();
@@ -368,6 +388,45 @@ pos.post('/zreport/close', async (c) => {
   }).run();
 
   return ok(c, result.row, 201);
+});
+
+// ── Reporting round (cashier hand-over) ──
+//
+// The cashier reports at 10:00 and again at 14:00, then hands in a combined
+// sheet for the whole day. All three are the same query over a different
+// shop-local window, scoped like the Z-report: a cashier only ever sees their
+// own takings.
+pos.get('/shift-report', async (c) => {
+  const date = String(c.req.query('date') || '').trim() || todayISO();
+  const round = resolveRound(date, c.req.query('from_time') || '00:00', c.req.query('to_time') || '00:00');
+  if (!round) return badRequest(c, 'ช่วงเวลาไม่ถูกต้อง');
+
+  const scope = zScope(c, {
+    date,
+    eventId: Number(c.req.query('event_id')) || null,
+    cashierId: Number(c.req.query('cashier_id')) || null,
+  });
+  const figures = await computeRange(c.env.DB, round.from, round.to, scope.eventId, scope.cashierId);
+
+  const [event, cashier] = await Promise.all([
+    scope.eventId
+      ? c.env.DB.prepare('SELECT name FROM events WHERE id = ?').bind(scope.eventId).first<{ name: string }>()
+      : null,
+    scope.cashierId
+      ? c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(scope.cashierId).first<{ display_name: string }>()
+      : null,
+  ]);
+
+  return ok(c, {
+    business_date: date,
+    from: round.from,
+    to: round.to,
+    event_id: scope.eventId,
+    event_name: event?.name ?? null,
+    cashier_user_id: scope.cashierId,
+    cashier_name: cashier?.display_name ?? null,
+    ...figures,
+  });
 });
 
 pos.get('/zreport/history', async (c) => {

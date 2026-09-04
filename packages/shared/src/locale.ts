@@ -261,6 +261,27 @@ export const TH = {
   zDrifted: 'มีการขายเกิดขึ้นหลังปิดวัน — ตัวเลขที่ปิดไว้ไม่เปลี่ยนแปลง',
   reportHash: 'รหัสรายงาน',
   noZReports: 'ยังไม่มีประวัติการปิดวัน',
+  // ── Reporting rounds (cashier hand-over 10:00 / 14:00 / รวมทั้งวัน) ──
+  shiftReport: 'รายงานสรุปรอบ',
+  dailyReport: 'รายงานสรุปประจำวัน',
+  reportRound: 'รอบรายงาน',
+  roundMorning: 'รอบ 10:00',
+  roundAfternoon: 'รอบ 14:00',
+  roundFullDay: 'รวมทั้งวัน',
+  timeFrom: 'ตั้งแต่เวลา',
+  timeTo: 'ถึงเวลา',
+  printShiftReport: 'พิมพ์รายงานรอบนี้',
+  roundPeriod: 'ช่วงเวลา',
+  noSalesInRound: 'ไม่มีการขายในรอบนี้',
+  reportPrinted: 'ส่งรายงานไปที่เครื่องพิมพ์แล้ว',
+
+  // ── Built-in (iMin) printer ──
+  builtInPrinter: 'เครื่องพิมพ์ในตัว (iMin)',
+  builtInPrinterReady: 'พร้อมใช้งาน — พิมพ์ได้ทันที ไม่ต้องจับคู่',
+  builtInPrinterMissing: 'ไม่พบเครื่องพิมพ์ในตัว จะใช้บลูทูธแทน',
+  openCashDrawer: 'เปิดลิ้นชักเก็บเงิน',
+  printerMode: 'ช่องทางการพิมพ์',
+
   clearLocalData: 'ล้างข้อมูลในเครื่อง',
   clearLocalDataHint: 'ลบคิวขายออฟไลน์ บิลที่พักไว้ และตะกร้าปัจจุบันออกจากเครื่องนี้',
   clearLocalDataDone: 'ล้างข้อมูลในเครื่องเรียบร้อยแล้ว',

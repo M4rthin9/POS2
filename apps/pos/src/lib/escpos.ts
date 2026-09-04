@@ -6,9 +6,10 @@
 // content of components/Receipt.tsx — keep both in sync when the receipt
 // layout changes.
 
-import type { PublicSettings, Sale, ZReport } from '@cida/shared';
+import type { PublicSettings, Sale, ShiftReport, ZReport } from '@cida/shared';
 import { fmt, fmtDate, PAYMENT_LABELS, TH } from '@cida/shared';
 import * as printer from './bluetooth-printer';
+import { iminAvailable, iminOpenCashBox, iminPrintBitmap } from './imin-printer';
 
 type Line =
   | { k: 'text'; t: string; size: number; bold?: boolean; align?: 'left' | 'center' }
@@ -109,6 +110,44 @@ function zReportLines(z: ZReport, settings: PublicSettings): Line[] {
   return lines;
 }
 
+function shiftReportLines(r: ShiftReport, settings: PublicSettings, title: string): Line[] {
+  const base = widthPx(settings) >= 576 ? 26 : 22;
+  const lines: Line[] = [];
+  const row = (l: string, v: string, bold = false) => lines.push({ k: 'row', l, r: v, bold });
+  // The bounds are already shop-local, so they are sliced rather than parsed —
+  // fmtDate() would treat them as UTC and shift every round by seven hours.
+  const hhmm = (local: string) => local.slice(11, 16);
+
+  if (settings.org_name) lines.push({ k: 'text', t: settings.org_name, size: base + 2, bold: true, align: 'center' });
+  lines.push({ k: 'text', t: title, size: base + 1, bold: true, align: 'center' });
+  lines.push({ k: 'rule' });
+
+  row(TH.businessDate, r.business_date);
+  row(TH.roundPeriod, `${hhmm(r.from)} - ${hhmm(r.to)}`);
+  if (r.event_name) row(TH.event, r.event_name);
+  if (r.cashier_name) row(TH.cashier, r.cashier_name);
+  lines.push({ k: 'rule' });
+
+  row(TH.grossSales, fmt(r.gross));
+  row(TH.totalDiscount, `-${fmt(r.discount)}`);
+  row(TH.netRevenue, fmt(r.net), true);
+  lines.push({ k: 'rule' });
+
+  row(PAYMENT_LABELS.Cash, fmt(r.cash_expected));
+  row(PAYMENT_LABELS.PromptPay, fmt(r.promptpay_total));
+  lines.push({ k: 'rule' });
+
+  row(TH.ordersCompleted, String(r.sale_count));
+  row(TH.ordersVoid, String(r.void_count));
+  row(TH.ordersRefunded, String(r.refund_count));
+  lines.push({ k: 'rule' });
+
+  row(TH.printedAt, fmtDate(new Date().toISOString()));
+  lines.push({ k: 'text', t: '____________________', size: base, align: 'center' });
+  lines.push({ k: 'text', t: TH.cashier, size: base - 4, align: 'center' });
+  return lines;
+}
+
 function testLines(settings: PublicSettings): Line[] {
   const base = widthPx(settings) >= 576 ? 26 : 22;
   return [
@@ -121,11 +160,11 @@ function testLines(settings: PublicSettings): Line[] {
   ];
 }
 
-/** Draw the lines onto a canvas and return packed 1-bit rows (MSB first). */
+/** Draw the lines onto a canvas. Bluetooth packs it to 1-bit; iMin prints it as-is. */
 interface Span { x: number; y: number; text: string; size: number; bold: boolean }
 type RulePos = { y: number };
 
-function renderBitmap(lines: Line[], w: number): { data: Uint8Array; h: number } {
+function renderCanvas(lines: Line[], w: number): HTMLCanvasElement {
   // Pass 1 lays everything out against an oversized scratch canvas so wrapping
   // can measure text freely; pass 2 paints onto the right-sized canvas.
   const scratch = document.createElement('canvas');
@@ -242,6 +281,13 @@ function renderBitmap(lines: Line[], w: number): { data: Uint8Array; h: number }
     g.stroke();
   }
 
+  return canvas;
+}
+
+/** Pack a rendered canvas into 1-bit rows (MSB first) for ESC/POS raster. */
+function packBits(canvas: HTMLCanvasElement): { data: Uint8Array; h: number } {
+  const { width: w, height: h } = canvas;
+  const g = canvas.getContext('2d', { willReadFrequently: true })!;
   const img = g.getImageData(0, 0, w, h).data;
   const rowBytes = Math.ceil(w / 8);
   const out = new Uint8Array(rowBytes * h);
@@ -288,15 +334,41 @@ async function ensureFonts(): Promise<void> {
 }
 
 /**
- * Connect first, then render. requestDevice() needs transient user activation,
- * and awaiting ensureFonts()/canvas work first consumes it — the first print
- * from an unpaired terminal would fail with NotAllowedError.
+ * The built-in iMin printer is preferred: it needs no pairing and no user
+ * gesture, so a receipt prints on the first tap.
+ *
+ * On the Bluetooth fallback the order is load-bearing — requestDevice() needs
+ * transient user activation, and awaiting ensureFonts()/canvas work first
+ * consumes it, so an unpaired terminal would fail with NotAllowedError.
  */
 async function printLines(lines: Line[], settings: PublicSettings): Promise<void> {
+  const w = widthPx(settings);
+  if (iminAvailable()) {
+    await ensureFonts();
+    await iminPrintBitmap(renderCanvas(lines, w).toDataURL('image/png'));
+    return;
+  }
   await printer.ensureConnected();
   await ensureFonts();
-  const w = widthPx(settings);
-  await printer.send(escposRaster(renderBitmap(lines, w), w));
+  await printer.send(escposRaster(packBits(renderCanvas(lines, w)), w));
+}
+
+/** True when this device prints without pairing a Bluetooth printer first. */
+export function builtInPrinter(): boolean {
+  return iminAvailable();
+}
+
+/**
+ * Pop the cash drawer. Fire-and-forget: the drawer opens alongside the
+ * receipt, and making the cashier wait on it is the delay they feel.
+ */
+export function openCashDrawer(): void {
+  if (iminAvailable()) {
+    iminOpenCashBox();
+    return;
+  }
+  // ESC p 0 25 250 — pulse drawer pin 2, the standard kick on ESC/POS printers.
+  if (printer.isConnected()) void printer.send(new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa])).catch(() => {});
 }
 
 /** Print one sale receipt on the built-in printer. */
@@ -312,4 +384,13 @@ export async function printTestPage(settings: PublicSettings): Promise<void> {
 /** Print a day-close (Z) summary. */
 export async function printZReportThermal(z: ZReport, settings: PublicSettings): Promise<void> {
   await printLines(zReportLines(z, settings), settings);
+}
+
+/** Print a hand-over round summary (10:00, 14:00, or the whole day). */
+export async function printShiftReportThermal(
+  report: ShiftReport,
+  settings: PublicSettings,
+  title: string,
+): Promise<void> {
+  await printLines(shiftReportLines(report, settings, title), settings);
 }
