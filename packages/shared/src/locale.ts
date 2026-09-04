@@ -271,6 +271,7 @@ export const TH = {
   timeFrom: 'ตั้งแต่เวลา',
   timeTo: 'ถึงเวลา',
   printShiftReport: 'พิมพ์รายงานรอบนี้',
+  printDailyReport: 'พิมพ์รายงานประจำวัน',
   roundPeriod: 'ช่วงเวลา',
   noSalesInRound: 'ไม่มีการขายในรอบนี้',
   reportPrinted: 'ส่งรายงานไปที่เครื่องพิมพ์แล้ว',
