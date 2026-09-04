@@ -28,7 +28,13 @@ export default function HistoryPage() {
     if (!round) return;
     let stale = false;
     setSales(null);
-    api.mySales(round).then((s) => !stale && setSales(s)).catch(() => !stale && setSales([]));
+    // The list is scoped to the whole shop-local business day, not to the
+    // selected round's time window — a cashier expects to see every bill they
+    // rang up that day regardless of which hand-over round is highlighted.
+    api
+      .mySales({ date: round.date, event_id: round.event_id })
+      .then((s) => !stale && setSales(s))
+      .catch(() => !stale && setSales([]));
     return () => {
       stale = true;
     };

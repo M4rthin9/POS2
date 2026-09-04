@@ -77,8 +77,8 @@ export const api = {
 
   createSale: (input: SaleCreateInput) => request<Sale>('/api/sales', { method: 'POST', body: JSON.stringify(input) }),
 
-  /** Without a round the server returns the cashier's most recent bills. */
-  mySales: (round?: ReportRound) => request<Sale[]>(`/api/sales${qs(round)}`),
+  /** Without params the server returns the cashier's most recent bills; pass a shop-local `date` to scope to one business day. */
+  mySales: (q?: { date?: string; event_id?: number | null }) => request<Sale[]>(`/api/sales${qs(q)}`),
 
   shiftReport: (round: ReportRound) => request<ShiftReport>(`/api/shift-report${qs(round)}`),
 

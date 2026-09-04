@@ -123,6 +123,10 @@ pos.get('/sales', async (c) => {
     if (!round) return badRequest(c, 'ช่วงเวลาไม่ถูกต้อง');
     sql += ` AND ${localTime('s.')} >= ? AND ${localTime('s.')} < ?`;
     args.push(round.from, round.to);
+  } else if (roundDate) {
+    // Date-scoped (no round time bounds): the whole shop-local business day.
+    sql += ` AND date(${localTime('s.')}) = ?`;
+    args.push(roundDate);
   }
   sql += ' ORDER BY s.id DESC LIMIT 200';
   const { results } = await c.env.DB.prepare(sql).bind(...args).all();
