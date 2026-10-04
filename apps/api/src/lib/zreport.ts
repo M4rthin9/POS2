@@ -32,14 +32,21 @@ export interface ZScope {
  * A module constant, never request input — it is interpolated into SQL.
  */
 const SHOP_UTC_OFFSET_HOURS = 7;
-export const SHOP_TZ_MODIFIER = `+${SHOP_UTC_OFFSET_HOURS} hours`;
 
-/** SQL expression turning a stored UTC timestamp into shop-local time. */
-export function localTime(prefix = ''): string {
-  return `datetime(${prefix}created_at, '${SHOP_TZ_MODIFIER}')`;
+/**
+ * Index-friendly local-time filters: the bounds are shifted to UTC instead of
+ * the column, so `idx_sales_created` is used rather than scanning every sale.
+ * localDay binds [date, date]; localRange binds [from, to) local datetimes.
+ */
+const TO_UTC = `-${SHOP_UTC_OFFSET_HOURS} hours`;
+export function localDay(prefix = ''): string {
+  return `${prefix}created_at >= datetime(?, '${TO_UTC}') AND ${prefix}created_at < datetime(?, '+1 day', '${TO_UTC}')`;
+}
+export function localRange(prefix = ''): string {
+  return `${prefix}created_at >= datetime(?, '${TO_UTC}') AND ${prefix}created_at < datetime(?, '${TO_UTC}')`;
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_RE =/^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
@@ -81,13 +88,12 @@ async function computeFigures(
   // Same predicate rendered twice: unaliased for the sales-only aggregate, and
   // `s.`-qualified for the query that joins sale_payments.
   const build = (p: string) => {
-    const local = localTime(p);
-    const where = window.kind === 'day' ? [`date(${local}) = ?`] : [`${local} >= ?`, `${local} < ?`];
+    const where = [window.kind === 'day' ? localDay(p) : localRange(p)];
     if (eventId) where.push(`${p}event_id = ?`);
     if (cashierId) where.push(`${p}cashier_user_id = ?`);
     return where.join(' AND ');
   };
-  const args: unknown[] = window.kind === 'day' ? [window.date] : [window.from, window.to];
+  const args: unknown[] = window.kind === 'day' ? [window.date, window.date] : [window.from, window.to];
   if (eventId) args.push(eventId);
   if (cashierId) args.push(cashierId);
   const clause = build('');

@@ -17,7 +17,7 @@ admin.get('/overview', async (c) => {
     c.env.DB.prepare('SELECT COUNT(*) AS n FROM divisions').first(),
     c.env.DB.prepare(
       `SELECT COUNT(*) AS count, COALESCE(SUM(total),0) AS revenue, COALESCE(SUM(discount),0) AS discount
-       FROM sales WHERE date(created_at) = date('now') AND status = 'COMPLETED'`,
+       FROM sales WHERE created_at >= date('now') AND status = 'COMPLETED'`,
     ).first(),
     c.env.DB.prepare(
       "SELECT id, name, date FROM events WHERE status = 'ACTIVE' ORDER BY id DESC",
@@ -54,8 +54,8 @@ admin.get('/stats', async (c) => {
 
   let sql = "SELECT * FROM sales WHERE status = 'COMPLETED'";
   const args: unknown[] = [];
-  if (from) { sql += ' AND date(created_at) >= ?'; args.push(from); }
-  if (to) { sql += ' AND date(created_at) <= ?'; args.push(to); }
+  if (from) { sql += ' AND created_at >= ?'; args.push(from); }
+  if (to) { sql += ` AND created_at < date(?, '+1 day')`; args.push(to); }
   if (eventIds.length) { sql += ` AND event_id IN (${eventIds.map(() => '?').join(',')})`; args.push(...eventIds); }
   const { results: sales } = await c.env.DB.prepare(sql + ' ORDER BY id').bind(...args).all();
 
@@ -139,10 +139,19 @@ admin.get('/dashboard', async (c) => {
 
   const where = ['1=1'];
   const args: unknown[] = [];
-  if (from) { where.push('date(s.created_at) >= ?'); args.push(from); }
-  if (to) { where.push('date(s.created_at) <= ?'); args.push(to); }
+  if (from) { where.push('s.created_at >= ?'); args.push(from); }
+  if (to) { where.push(`s.created_at < date(?, '+1 day')`); args.push(to); }
   if (eventId) { where.push('s.event_id = ?'); args.push(eventId); }
   const scope = where.join(' AND ');
+
+  // Cheap change probe (MAX(id) is a single-row read each). Sales, voids,
+  // refunds and Z-closes all bump one of these; the date rolls "today" over.
+  // Auto-refresh sends the last version and skips the full query set when idle.
+  const ver = await c.env.DB.prepare(
+    'SELECT (SELECT MAX(id) FROM sales) AS s, (SELECT MAX(id) FROM audit_log) AS a',
+  ).first<{ s: number | null; a: number | null }>();
+  const version = `${today}:${ver?.s ?? 0}:${ver?.a ?? 0}`;
+  if (c.req.query('v') === version) return ok(c, { unchanged: true, version });
 
   const thresholdRow = await c.env.DB.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").first<{ value: string }>();
   const threshold = Math.max(0, Number(thresholdRow?.value ?? 5) || 0);
@@ -189,11 +198,10 @@ admin.get('/dashboard', async (c) => {
 
     c.env.DB.prepare(
       `SELECT e.id, e.code, e.name, e.status, e.date,
-              COALESCE(SUM(CASE WHEN s.status='COMPLETED' AND date(s.created_at)=date('now') THEN 1 END),0) AS today_sales,
-              COALESCE(SUM(CASE WHEN s.status='COMPLETED' AND date(s.created_at)=date('now') THEN s.total END),0) AS today_revenue,
-              MAX(s.created_at) AS last_sale_at
-       FROM events e LEFT JOIN sales s ON s.event_id = e.id
-       GROUP BY e.id
+              (SELECT COUNT(*) FROM sales s WHERE s.event_id = e.id AND s.created_at >= date('now') AND s.status='COMPLETED') AS today_sales,
+              (SELECT COALESCE(SUM(s.total),0) FROM sales s WHERE s.event_id = e.id AND s.created_at >= date('now') AND s.status='COMPLETED') AS today_revenue,
+              (SELECT MAX(s.created_at) FROM sales s WHERE s.event_id = e.id) AS last_sale_at
+       FROM events e
        ORDER BY CASE e.status WHEN 'ACTIVE' THEN 0 WHEN 'UPCOMING' THEN 1 ELSE 2 END, e.id DESC LIMIT 12`,
     ).all(),
 
@@ -210,10 +218,11 @@ admin.get('/dashboard', async (c) => {
     ).bind(...args).all(),
 
     c.env.DB.prepare(
-      `SELECT p.id, p.sku, p.name, p.stock, d.name AS division_name,
-              COALESCE((SELECT SUM(si.qty) FROM sale_items si JOIN sales s2 ON s2.id = si.sale_id
-                        WHERE si.product_id = p.id AND s2.status='COMPLETED' AND date(s2.created_at)=date('now')),0) AS sold_today
+      // Today's items aggregated once, not re-read per low-stock product.
+      `SELECT p.id, p.sku, p.name, p.stock, d.name AS division_name, COALESCE(t.qty,0) AS sold_today
        FROM products p LEFT JOIN divisions d ON d.id = p.division_id
+       LEFT JOIN (SELECT si.product_id, SUM(si.qty) AS qty FROM sales s2 CROSS JOIN sale_items si ON si.sale_id = s2.id
+                  WHERE s2.created_at >= date('now') AND s2.status='COMPLETED' GROUP BY si.product_id) t ON t.product_id = p.id
        WHERE p.active = 1 AND p.stock IS NOT NULL AND p.stock <= ?
        ORDER BY p.stock, p.name LIMIT 30`,
     ).bind(threshold).all(),
@@ -233,7 +242,7 @@ admin.get('/dashboard', async (c) => {
 
     c.env.DB.prepare(
       `SELECT COALESCE(SUM(total),0) AS net, COUNT(*) AS n FROM sales
-       WHERE date(created_at) = date('now') AND status='COMPLETED'`,
+       WHERE created_at >= date('now') AND status='COMPLETED'`,
     ).first<Record<string, number>>(),
   ]);
 
@@ -253,6 +262,7 @@ admin.get('/dashboard', async (c) => {
   const cashTotal = r2(paymentMap.Cash ?? 0);
 
   return ok(c, {
+    version,
     period: { from: from ?? null, to: to ?? null, label: '' },
     kpi: {
       gross: r2(Number(kpiRow?.gross ?? 0)),
@@ -650,8 +660,8 @@ admin.get('/sales', async (c) => {
   const args: unknown[] = [];
   if (eventId) { sql += ' AND s.event_id = ?'; args.push(Number(eventId)); }
   if (cashierId) { sql += ' AND s.cashier_user_id = ?'; args.push(Number(cashierId)); }
-  if (from) { sql += ' AND date(s.created_at) >= ?'; args.push(from); }
-  if (to) { sql += ' AND date(s.created_at) <= ?'; args.push(to); }
+  if (from) { sql += ' AND s.created_at >= ?'; args.push(from); }
+  if (to) { sql += ` AND s.created_at < date(?, '+1 day')`; args.push(to); }
   if (status && ['COMPLETED', 'VOID', 'REFUNDED'].includes(status)) { sql += ' AND s.status = ?'; args.push(status); }
   sql += ' ORDER BY s.id DESC LIMIT 500';
   const { results } = await c.env.DB.prepare(sql).bind(...args).all();
@@ -741,8 +751,8 @@ admin.get('/audit', async (c) => {
 
   const where = ['1=1'];
   const args: unknown[] = [];
-  if (from) { where.push('date(a.created_at) >= ?'); args.push(from); }
-  if (to) { where.push('date(a.created_at) <= ?'); args.push(to); }
+  if (from) { where.push('a.created_at >= ?'); args.push(from); }
+  if (to) { where.push(`a.created_at < date(?, '+1 day')`); args.push(to); }
   if (entity) { where.push('a.entity = ?'); args.push(entity); }
   if (actor) { where.push('a.actor_user_id = ?'); args.push(actor); }
 

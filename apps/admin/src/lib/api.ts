@@ -174,7 +174,8 @@ export const api = {
     request<{ deleted: number }>('/api/admin/sales/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
 
   // ── Operations dashboard ──
-  dashboard: (q?: DateScope) => request<DashboardPayload>(`/api/admin/dashboard${qs(q)}`),
+  dashboard: (q?: DateScope & { v?: string }) =>
+    request<DashboardPayload | { unchanged: true; version: string }>(`/api/admin/dashboard${qs(q)}`),
 
   // ── Ledger / statement ──
   journal: (q?: DateScope & { cashier_id?: number }) => request<JournalResponse>(`/api/admin/journal${qs(q)}`),

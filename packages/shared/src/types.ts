@@ -449,6 +449,8 @@ export interface LowStockItem {
 }
 
 export interface DashboardPayload {
+  /** Change token; send back as `v` to get { unchanged: true } when nothing moved. */
+  version: string;
   period: { from: string | null; to: string | null; label: string };
   kpi: {
     gross: number;

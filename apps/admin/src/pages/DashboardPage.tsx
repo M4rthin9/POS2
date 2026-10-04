@@ -44,12 +44,16 @@ export default function DashboardPage() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [showReport, setShowReport] = useState(false);
   const firstLoad = useRef(true);
+  const version = useRef('');
 
-  const load = useCallback(async () => {
+  // `v` set = background poll: the API answers { unchanged } for a few rows read
+  // instead of re-running every dashboard query when no sale/void/close happened.
+  const load = useCallback(async (v?: string) => {
     const { from, to } = periodRange(range.period, range.from, range.to);
     try {
-      const payload = await api.dashboard({ from, to, event_id: eventFilter ? Number(eventFilter) : undefined });
-      setData(payload);
+      const payload = await api.dashboard({ from, to, event_id: eventFilter ? Number(eventFilter) : undefined, v });
+      version.current = payload.version;
+      if (!('unchanged' in payload)) setData(payload);
       setError('');
     } catch (e) {
       setError(e instanceof Error ? e.message : TH.error);
@@ -68,9 +72,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!live) return;
-    const id = window.setInterval(() => setTick((t) => t + 1), REFRESH_MS);
-    return () => window.clearInterval(id);
-  }, [live]);
+    // Skip refreshes while the tab is hidden — an admin tab left open overnight
+    // otherwise runs the whole dashboard query set every interval. Catch up on return.
+    const poll = () => !document.hidden && load(version.current);
+    const id = window.setInterval(poll, REFRESH_MS);
+    document.addEventListener('visibilitychange', poll);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', poll);
+    };
+  }, [live, load]);
 
   const kpi = data?.kpi;
   const label = periodLabel(range.period, range.from, range.to);

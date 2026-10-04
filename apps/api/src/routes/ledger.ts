@@ -26,8 +26,8 @@ ledger.get('/journal', async (c) => {
 
   const where: string[] = ['1=1'];
   const args: unknown[] = [];
-  if (from) { where.push('date(s.created_at) >= ?'); args.push(from); }
-  if (to) { where.push('date(s.created_at) <= ?'); args.push(to); }
+  if (from) { where.push('s.created_at >= ?'); args.push(from); }
+  if (to) { where.push(`s.created_at < date(?, '+1 day')`); args.push(to); }
   if (eventId) { where.push('s.event_id = ?'); args.push(eventId); }
   if (cashierId) { where.push('s.cashier_user_id = ?'); args.push(cashierId); }
 
@@ -46,7 +46,7 @@ ledger.get('/journal', async (c) => {
   // Opening balance = everything settled before the window.
   let openingSql = "SELECT COALESCE(SUM(total),0) AS n FROM sales WHERE status = 'COMPLETED'";
   const openingArgs: unknown[] = [];
-  if (from) { openingSql += ' AND date(created_at) < ?'; openingArgs.push(from); }
+  if (from) { openingSql += ' AND created_at < ?'; openingArgs.push(from); }
   else openingSql += ' AND 1=0';
   if (eventId) { openingSql += ' AND event_id = ?'; openingArgs.push(eventId); }
   if (cashierId) { openingSql += ' AND cashier_user_id = ?'; openingArgs.push(cashierId); }
@@ -117,8 +117,8 @@ ledger.get('/report', async (c) => {
 
   const where = ["s.status = 'COMPLETED'"];
   const args: unknown[] = [];
-  if (from) { where.push('date(s.created_at) >= ?'); args.push(from); }
-  if (to) { where.push('date(s.created_at) <= ?'); args.push(to); }
+  if (from) { where.push('s.created_at >= ?'); args.push(from); }
+  if (to) { where.push(`s.created_at < date(?, '+1 day')`); args.push(to); }
   if (eventId) { where.push('s.event_id = ?'); args.push(eventId); }
   const scope = where.join(' AND ');
 

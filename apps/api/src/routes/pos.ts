@@ -6,7 +6,8 @@ import { sealSale } from '../lib/ledger';
 import {
   closeZReport,
   computeRange,
-  localTime,
+  localDay,
+  localRange,
   parseCounted,
   readZReport,
   resolveRound,
@@ -111,22 +112,22 @@ pos.get('/sales', async (c) => {
     args.push(Number(eventId));
   }
   if (from) {
-    sql += ' AND date(s.created_at) >= ?';
+    sql += ' AND s.created_at >= ?';
     args.push(from);
   }
   if (to) {
-    sql += ' AND date(s.created_at) <= ?';
+    sql += ` AND s.created_at < date(?, '+1 day')`;
     args.push(to);
   }
   if (roundDate && fromTime && toTime) {
     const round = resolveRound(roundDate, fromTime, toTime);
     if (!round) return badRequest(c, 'ช่วงเวลาไม่ถูกต้อง');
-    sql += ` AND ${localTime('s.')} >= ? AND ${localTime('s.')} < ?`;
+    sql += ` AND ${localRange('s.')}`;
     args.push(round.from, round.to);
   } else if (roundDate) {
     // Date-scoped (no round time bounds): the whole shop-local business day.
-    sql += ` AND date(${localTime('s.')}) = ?`;
-    args.push(roundDate);
+    sql += ` AND ${localDay('s.')}`;
+    args.push(roundDate, roundDate);
   }
   sql += ' ORDER BY s.id DESC LIMIT 200';
   const { results } = await c.env.DB.prepare(sql).bind(...args).all();
